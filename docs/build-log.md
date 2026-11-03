@@ -127,3 +127,70 @@ rerun        ok=25 changed=0
 ```
 
 `ansible-lint --profile production` passes.
+
+### On the cluster
+
+Rebooted the hypervisor onto vfio-pci (`lspci -nnk -s 01:00`: `Kernel driver
+in use: vfio-pci` for both functions; `gpu_passthrough.yml` rerun
+`changed=0`), set `nvke_gpu_operator: false` in omerfsen.nvke's `local.yml`,
+and started the cluster with its `kvm.yml` (1m50s, nothing to build).
+
+The first run of `playbooks/nvke.yml` against omerfsen.nvke's KVM inventory:
+
+```text
+PLAY [NVIDIA AI Cluster Runtime on NVKE]
+skipping: no hosts matched
+```
+
+That inventory lists no VMs; its `kvm` playbook adds them with `add_host` at
+run time. The `nvke` playbook now starts with a play that adds the bootstrap
+VM from `nvke_kvm_vms` (same key, same ProxyJump rule) when the
+`nvke_bootstrap` group is empty.
+
+```text
+first run   localhost ok=1 changed=0   nvke-bootstrap ok=32 changed=8   real 7m33s
+rerun       localhost ok=1 changed=0   nvke-bootstrap ok=31 changed=0   real 27s
+```
+
+All 11 releases `deployed`; `gpu-operator` went from revision 2 (omerfsen.nvke)
+to 3, in place. 69 pods, all running. The ClusterPolicy is `ready` with
+driver `615.71.09` and both toolkit variables; `nvke-cp-03` has
+`nvidia.com/gpu: 1`. `aicr validate` (`/var/lib/aicr/validation.yaml`, CTRF):
+3 tests, 3 passed (`platform-health`, `gpu-operator-health`, `dra-support`).
+The DRA check notes the GPU is allocated through the device plugin
+(`device-plugin-extended-resource`); the DRA driver's ResourceSlice is the
+compute-domain one, and the full-GPU DRA subtest does not apply.
+
+helmfile's diff found nothing to change on the rerun: no chart in the
+bundle regenerates certificates or random values on every render.
+
+omerfsen.nvke's GPU tests on the AICR stack:
+
+```text
+01-gpu-nvidia-smi            PASS         5s
+02-gpu-cuda-vectoradd        PASS         5s
+03-gpu-tensorflow            PASS        30s
+04-gpu-pytorch               PASS        11s
+05-gpu-tensorrt              PASS        10s
+06-gpu-operator-metrics      FAIL         5s    no DCGM_FI_DEV_GPU_TEMP metric
+```
+
+The exporter's log: `MIG hierarchy unavailable because NVML is not loaded`,
+and it reads from `DCGM_REMOTE_HOSTENGINE_INFO=nvidia-dcgm:5555`, a
+standalone DCGM host engine AICR turns on (omerfsen.nvke's values did not).
+That pod's log starts with `nvidia driver modules are not yet loaded,
+invoking /usr/sbin/runc directly`: it started at 12:10:00, the second the
+driver container restarted to rebuild the module for the upgrade, so the
+runtime gave it no driver libraries and it never retried. It runs
+privileged, so the toolkit's
+`ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` is not the
+cause. Deleting the `nvidia-dcgm` pod, then the exporter's:
+`NVML provider successfully initialized`, and
+
+```text
+06-gpu-operator-metrics      PASS         5s
+```
+
+A race of the in-place upgrade from omerfsen.nvke's release, documented in
+the README with the two-pod restart; `aicr validate`'s
+`gpu-operator-health` passes either way.

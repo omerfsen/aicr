@@ -44,7 +44,7 @@ Terraform or Fleet. This collection uses the helmfile bundle:
 | Target host | Linux, amd64 or arm64, with helm, kubectl and the cluster's admin kubeconfig |
 | Clusters | Any AICR service with a recipe (`aicr recipe --help`); the `nvke` playbook for omerfsen.nvke clusters |
 | ansible-core | 2.16 or later |
-| Tested | Rendering and idempotency on Ubuntu 24.04 with Helm 4.2.4: the `nvke` recipe's 12 components (345 objects through `helmfile template`), rerun `changed=0`, check mode reports a changed recipe without touching the kept bundle |
+| Tested | An NVKE v0.22.0 cluster from omerfsen.nvke on KVM (3 nodes, an RTX 4080 SUPER passed through to one), from the bootstrap host with Helm 4.2.4: AICR v1.2.0's `nvke` recipe, 11 releases deployed in 7m30s (omerfsen.nvke's GPU Operator release upgraded in place), all 69 pods running, `aicr validate` 3/3 conformance checks pass, rerun `changed=0` in 27s; omerfsen.nvke's GPU tests (nvidia-smi, CUDA, TensorFlow, PyTorch, TensorRT, DCGM metrics) 6/6 pass |
 
 ## Component versions
 
@@ -88,6 +88,22 @@ ansible-playbook -i ~/nvke/inventory/kvm playbooks/nvke.yml -e @examples/nvke-kv
 
 AICR's GPU Operator release has the same name and namespace as
 omerfsen.nvke's, so it is upgraded in place, not installed beside it.
+
+omerfsen.nvke's KVM inventory lists no VMs (its `kvm` playbook adds them at
+run time), so the `nvke` playbook adds the bootstrap VM from the same
+variables when the `nvke_bootstrap` group is empty. A static inventory that
+lists the bootstrap host is used as it is.
+
+**After that in-place upgrade, restart DCGM once.** AICR runs a standalone
+DCGM host engine (`nvidia-dcgm`), which omerfsen.nvke's values did not. In
+the upgrade it can start in the same second the driver container restarts
+(the driver is rebuilt), come up without NVML, and the exporter then serves
+no GPU metrics. `aicr validate` does not notice. One restart fixes it:
+
+```shell
+kubectl -n gpu-operator delete pod -l app=nvidia-dcgm
+kubectl -n gpu-operator delete pod -l app=nvidia-dcgm-exporter
+```
 
 The `nvke` playbook adds what every NVKE v0.22 cluster on the reference node
 image needs on top of AICR's `nvke` recipe:
