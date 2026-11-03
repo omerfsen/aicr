@@ -1,0 +1,20 @@
+{#- One AICRConfig for recipe, bundle and validate. List and object overrides
+    (aicr_set_json) have no AICRConfig field; the role passes them as
+    --set-json flags. -#}
+# {{ ansible_managed }}
+{% set recipe = {'criteria': aicr_criteria,
+                 'output': {'path': aicr_render_dir ~ '/recipe.yaml', 'format': 'yaml'}}
+   | combine({'profile': aicr_profile} if aicr_profile | length > 0 else {}) %}
+{% set bundle = {'input': {'recipe': aicr_render_dir ~ '/recipe.yaml'},
+                 'output': {'target': aicr_render_dir ~ '/bundle'},
+                 'deployment': {'deployer': 'helmfile', 'set': aicr_set}}
+   | combine({'scheduling': aicr_scheduling} if aicr_scheduling | length > 0 else {}) %}
+{% set validate = {'input': {'recipe': aicr_bundle_dir ~ '/recipe.yaml'},
+                   'execution': {'phases': aicr_validate_phases}
+                     | combine({'skipChecks': aicr_validate_skip_checks}
+                               if aicr_validate_skip_checks | length > 0 else {})} %}
+{{ {'kind': 'AICRConfig',
+    'apiVersion': 'aicr.run/v1beta1',
+    'metadata': {'name': 'omerfsen-aicr'},
+    'spec': {'recipe': recipe, 'bundle': bundle, 'validate': validate}}
+   | to_nice_yaml(indent=2, sort_keys=false) }}

@@ -1,0 +1,29 @@
+# Local tooling
+.venv/
+.collections/
+__pycache__/
+*.pyc
+.ansible/
+graphify-out
+
+# Collection build output
+*.tar.gz
+
+# Rendered recipes and bundles from local runs
+/render/
+/bundle/
+
+# Keys, credentials and kubeconfigs
+*.key
+*.kubeconfig
+admin.conf
+/kubeconfig*
+*.token
+.vault_pass*
+vault-password*
+
+# Local overrides
+*.local.yml
+
+# galaxy-importer output
+importer_result.json
