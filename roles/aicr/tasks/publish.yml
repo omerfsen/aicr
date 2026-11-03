@@ -1,0 +1,34 @@
+---
+# GitOps: copy the rendered bundle into a directory of a Git checkout (for
+# example <repo>/nvke/aicr/lab) only when it differs from what is there. The
+# role does not commit or push: review the change, commit it, and Argo CD
+# syncs it from the repository.
+
+- name: The GitOps directory is set
+  ansible.builtin.assert:
+    that: aicr_gitops_dir | length > 0
+    fail_msg: Set aicr_gitops_dir to the directory in a Git checkout that Argo CD watches.
+    quiet: true
+
+- name: Expand the GitOps directory
+  ansible.builtin.set_fact:
+    aicr_gitops_path: "{{ aicr_gitops_dir | expanduser }}"
+
+- name: Compare the bundle with the one in the GitOps directory
+  ansible.builtin.command:
+    argv: [diff, -r, -q, "{{ aicr_render_dir }}/bundle", "{{ aicr_gitops_path }}"]
+  register: aicr_gitops_diff
+  changed_when: ansible_check_mode and aicr_gitops_diff.rc != 0
+  check_mode: false
+  failed_when: aicr_gitops_diff.rc > 2
+
+- name: Write the bundle into the GitOps directory
+  ansible.builtin.shell: |
+    set -o pipefail
+    rm -rf {{ aicr_gitops_path | quote }}
+    mkdir -p {{ aicr_gitops_path | dirname | quote }}
+    cp -a {{ (aicr_render_dir ~ '/bundle') | quote }} {{ aicr_gitops_path | quote }}
+  args:
+    executable: /bin/bash
+  when: aicr_gitops_diff.rc != 0
+  changed_when: true

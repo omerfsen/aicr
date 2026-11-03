@@ -194,3 +194,86 @@ cause. Deleting the `nvidia-dcgm` pod, then the exporter's:
 A race of the in-place upgrade from omerfsen.nvke's release, documented in
 the README with the two-pod restart; `aicr validate`'s
 `gpu-operator-health` passes either way.
+
+## 2026-11-03: Argo CD, removal, and the AICR Operator
+
+### Research: what AICR offers besides the CLI
+
+Read the v1.2.0 repository end to end (operator chart and docs, user and
+integrator docs, recipes, validators, ADRs). Three ways to deploy:
+
+- the CLI rendering a bundle for a deployer (what this collection did);
+- the CLI rendering an Argo CD bundle into Git (AICR's ADR-027: a cluster
+  that manages its GPU stack through Git keeps using the CLI);
+- the AICR Operator, a Helm chart (`oci://ghcr.io/nvidia/charts/aicr-operator`,
+  1.2.0) that runs AICR in the cluster and rolls out through Argo CD from a
+  `ClusterRuntime` resource. Preview: `v1alpha1`, no hardware profile
+  qualified.
+
+The operator cannot run on this lab. `ClusterRuntime.spec.intent` is
+required; AICR's `nvke` recipe resolves an intent only with
+`accelerator: gb200` (`aicr recipe --service nvke --intent training` fails
+coverage); the operator has no `--data` or catalog setting for custom
+overlays; and AICR maps GeForce cards to `unknown-sku`, so discovery cannot
+back an accelerator either. It also needs two distinct node groups, Argo CD,
+a default StorageClass for its registry (NVKE ships none) and a cluster
+without a CLI-installed stack (no adoption). So the GitOps path is the CLI's.
+
+### The argocd-helm bundle at a repository subdirectory
+
+The plain `argocd` bundle assumes the repository root (`path: .`,
+`$values/007-gpu-operator/values.yaml`); there is no option for a
+subdirectory. The `argocd-helm` bundle is a Helm chart whose child
+Applications carry their values inline (`static/<component>.yaml` through
+`.Files.Get`), so it works from any path. One root Application points at
+`nvke/aicr/lab` with `deployer.includeRootApp: false`; `helm template` of the
+chart that way gives 11 child Applications and no root.
+
+The role got `aicr_deployer: argocd-helm` (render, then copy into
+`aicr_gitops_dir` only when `diff -r` differs; no commit), `aicr_state:
+absent`, and `aicr_owner`/`aicr_group` so the `gitops` playbook runs as the
+user on the workstation. The NVKE overrides moved to `playbooks/vars/nvke.yml`
+so both playbooks render the same stack. `gitops` rerun: `changed=0`, Git
+checkout clean.
+
+### Removing the CLI-installed stack
+
+```text
+TASK [List the installed Helm releases]  fatal: Error: unknown flag: --all
+```
+
+Helm 4 has no `helm list --all`; dropped. Then `aicr_state=absent`:
+`helmfile destroy` in 57s, rerun `changed=0`. What Helm left: KAI's scheduler
+pods and four admission webhooks (created by its operator from a CR), two
+GPU Operator pods terminating, ten namespaces, 19 CRDs. Removed the webhooks
+first (a mutating webhook on pods whose service is gone blocks pod creation),
+then the namespaces and CRDs; nothing hung on finalizers.
+
+### Argo CD from omerfsen/gitops-public
+
+Latest Argo CD Helm chart: `argo-cd` 10.11.6, Argo CD v3.5.6 (2026-10-26;
+v3.5.7 has no chart yet). AICR's CI pins 3.4.2 for the operator; the
+argocd-helm bundle needs 2.13 or later. Installed with the chart and
+`nvke/argocd/values.yaml` (one replica, insecure server behind
+port-forward, no Dex, no notifications), then applied `nvke/apps/aicr-lab.yaml`
+pointed at the branch until the repository's PR merges.
+
+All 12 Applications Synced and Healthy, but the ClusterPolicy stayed
+`notReady`:
+
+```text
+nvidia-device-plugin  failed to create FS watcher for /var/lib/kubelet/device-plugins/:
+                      couldn't initialize inotify: too many open files
+```
+
+`nvke-cp-03`: `fs.inotify.max_user_instances = 128`, 145 instances in use
+by root. Set 8192 instances and 524288 watches on all three nodes in
+`/etc/sysctl.d/90-inotify.conf` (belongs in omerfsen.nvke's node
+preparation), restarted the device plugin: ClusterPolicy `ready`,
+`nvidia.com/gpu: 1`.
+
+- `aicr validate` (the `nvke` playbook with `aicr_apply=false`): 3/3.
+- GPU tests 6/6, DCGM metrics included: the DCGM race was the in-place
+  upgrade's, a fresh install has none.
+- Self-heal: deleted the prometheus-adapter Deployment; Argo CD recreated it,
+  ready again in 37s.

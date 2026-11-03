@@ -1,20 +1,48 @@
 ---
 argument_specs:
   main:
-    short_description: An NVIDIA AI Cluster Runtime recipe on a Kubernetes cluster, applied with helmfile and validated.
+    short_description: An NVIDIA AI Cluster Runtime recipe on a Kubernetes cluster, applied with helmfile or written for Argo CD, and validated.
     description:
       - Installs a pinned, checksum-verified aicr CLI, helmfile and helm-diff plugin.
-      - Renders the recipe for O(aicr_criteria) into a helmfile bundle, with the value overrides in O(aicr_set) and O(aicr_set_json),
+      - Renders the recipe for O(aicr_criteria) into a bundle, with the value overrides in O(aicr_set) and O(aicr_set_json),
       - and keeps it only when it differs from the bundle of the last run.
-      - Applies it with C(helmfile apply), which syncs only the releases that differ, so a rerun changes nothing.
+      - Applies it with C(helmfile apply), which syncs only the releases that differ, so a rerun changes nothing;
+      - or, with O(aicr_deployer=argocd-helm), writes it into a GitOps checkout for Argo CD.
+      - O(aicr_state=absent) removes a stack the helmfile deployer installed.
       - Then waits for the GPU Operator's operands and runs C(aicr validate) for the phases in O(aicr_validate_phases).
       - Runs on a host with helm, kubectl and the cluster's admin kubeconfig, such as the NVKE bootstrap host.
     author: Omer Sen
     options:
+      aicr_state:
+        type: str
+        choices: [present, absent]
+        default: present
+        description:
+          - C(present) renders the bundle, then applies it (helmfile) or writes it to a GitOps checkout (argocd-helm).
+          - C(absent) destroys the stack the helmfile deployer installed (C(helmfile destroy) of the kept bundle). Helm keeps CRDs and namespaces.
+      aicr_deployer:
+        type: str
+        choices: [helmfile, argocd-helm]
+        default: helmfile
+        description:
+          - C(helmfile) applies the bundle from this host with C(helmfile apply).
+          - C(argocd-helm) writes an Argo CD Helm-chart bundle into O(aicr_gitops_dir); Argo CD applies it from Git. Nothing is applied from this host.
+      aicr_gitops_dir:
+        type: path
+        default: ""
+        description: With C(argocd-helm), the directory in a Git checkout that Argo CD watches. The role writes it but does not commit or push.
       aicr_kubeconfig:
         type: path
-        required: true
-        description: Path of the cluster's admin kubeconfig on the target host.
+        default: ""
+        description: Path of the cluster's admin kubeconfig on the target host. Required with the C(helmfile) deployer.
+      aicr_owner:
+        type: str
+        default: root
+        description: Owner of the files and binaries the role writes.
+      aicr_group:
+        type: str
+        default: root
+        description: Group of the files and binaries the role writes.
       aicr_version:
         type: str
         default: "1.2.0"

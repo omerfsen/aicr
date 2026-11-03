@@ -1,6 +1,7 @@
 ---
 # Every download is checksum-verified; unarchive replaces a binary only when
-# it differs from the one in the archive.
+# it differs from the one in the archive. helm, helmfile and helm-diff are
+# only needed where the bundle is applied (the helmfile deployer).
 
 - name: Helm is on the host
   ansible.builtin.command: "{{ aicr_helm }} version --short"
@@ -8,39 +9,41 @@
   changed_when: false
   check_mode: false
   failed_when: aicr_helm_check.rc != 0
+  when: aicr_deployer == 'helmfile'
 
 - name: Download directory
   ansible.builtin.file:
     path: "{{ aicr_workdir }}/downloads"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
     mode: "0700"
 
-- name: Download the aicr and helmfile archives (checksum verified)
+- name: Download the aicr (and helmfile) archives (checksum verified)
   ansible.builtin.get_url:
     url: "{{ item.url }}"
     dest: "{{ aicr_workdir }}/downloads/{{ item.url | basename }}"
     checksum: "sha256:{{ item.sha256[aicr_arch] }}"
-    owner: root
-    group: root
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
     mode: "0644"
     timeout: 120
-  loop:
-    - {name: aicr, url: "{{ aicr_url }}", sha256: "{{ aicr_sha256 }}"}
-    - {name: helmfile, url: "{{ aicr_helmfile_url }}", sha256: "{{ aicr_helmfile_sha256 }}"}
+  loop: >-
+    {{ [{'name': 'aicr', 'url': aicr_url, 'sha256': aicr_sha256}]
+       + ([{'name': 'helmfile', 'url': aicr_helmfile_url, 'sha256': aicr_helmfile_sha256}]
+          if aicr_deployer == 'helmfile' else []) }}
   loop_control:
     label: "{{ item.name }}"
   register: aicr_archives
 
-- name: Install aicr and helmfile
+- name: Install aicr (and helmfile)
   ansible.builtin.unarchive:
     src: "{{ item.dest }}"
     dest: "{{ aicr_bin_dir }}"
     remote_src: true
     include: ["{{ item.item.name }}"]
-    owner: root
-    group: root
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
     mode: "0755"
   loop: "{{ aicr_archives.results }}"
   loop_control:
@@ -53,40 +56,43 @@
   check_mode: false
   failed_when: aicr_cli_version.rc != 0 or aicr_version not in aicr_cli_version.stdout
 
-- name: Download the helm-diff plugin (checksum verified)
-  ansible.builtin.get_url:
-    url: "{{ aicr_helm_diff_url }}"
-    dest: "{{ aicr_workdir }}/downloads/{{ aicr_helm_diff_url | basename }}"
-    checksum: "sha256:{{ aicr_helm_diff_sha256[aicr_arch] }}"
-    owner: root
-    group: root
-    mode: "0644"
-    timeout: 120
-  register: aicr_helm_diff_archive
-
-- name: Helm plugin directory
-  ansible.builtin.file:
-    path: "{{ aicr_helm_plugins_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
-# Unpacked rather than `helm plugin install`: the archive already holds the
-# binary, so its install hook (which downloads it again) is not needed.
 - name: Install the helm-diff plugin
-  ansible.builtin.unarchive:
-    src: "{{ aicr_helm_diff_archive.dest }}"
-    dest: "{{ aicr_helm_plugins_dir }}"
-    remote_src: true
-    owner: root
-    group: root
+  when: aicr_deployer == 'helmfile'
+  block:
+    - name: Download the helm-diff plugin (checksum verified)
+      ansible.builtin.get_url:
+        url: "{{ aicr_helm_diff_url }}"
+        dest: "{{ aicr_workdir }}/downloads/{{ aicr_helm_diff_url | basename }}"
+        checksum: "sha256:{{ aicr_helm_diff_sha256[aicr_arch] }}"
+        owner: "{{ aicr_owner }}"
+        group: "{{ aicr_group }}"
+        mode: "0644"
+        timeout: 120
+      register: aicr_helm_diff_archive
 
-- name: Helm sees the pinned helm-diff
-  ansible.builtin.command: "{{ aicr_helm }} diff version"
-  environment:
-    HELM_PLUGINS: "{{ aicr_helm_plugins_dir }}"
-  register: aicr_helm_diff_check
-  changed_when: false
-  check_mode: false
-  failed_when: aicr_helm_diff_check.rc != 0 or aicr_helm_diff_check.stdout != aicr_helm_diff_version
+    - name: Helm plugin directory
+      ansible.builtin.file:
+        path: "{{ aicr_helm_plugins_dir }}"
+        state: directory
+        owner: "{{ aicr_owner }}"
+        group: "{{ aicr_group }}"
+        mode: "0755"
+
+    # Unpacked rather than `helm plugin install`: the archive already holds the
+    # binary, so its install hook (which downloads it again) is not needed.
+    - name: Unpack the helm-diff plugin
+      ansible.builtin.unarchive:
+        src: "{{ aicr_helm_diff_archive.dest }}"
+        dest: "{{ aicr_helm_plugins_dir }}"
+        remote_src: true
+        owner: "{{ aicr_owner }}"
+        group: "{{ aicr_group }}"
+
+    - name: Helm sees the pinned helm-diff
+      ansible.builtin.command: "{{ aicr_helm }} diff version"
+      environment:
+        HELM_PLUGINS: "{{ aicr_helm_plugins_dir }}"
+      register: aicr_helm_diff_check
+      changed_when: false
+      check_mode: false
+      failed_when: aicr_helm_diff_check.rc != 0 or aicr_helm_diff_check.stdout != aicr_helm_diff_version

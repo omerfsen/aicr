@@ -7,8 +7,8 @@
   ansible.builtin.file:
     path: "{{ aicr_workdir }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
     mode: "0700"
 
 # Rendering changes nothing on the cluster, so it also runs in check mode.
@@ -23,8 +23,8 @@
   ansible.builtin.file:
     path: "{{ aicr_render_dir }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
     mode: "0700"
   changed_when: false
   check_mode: false
@@ -33,8 +33,8 @@
   ansible.builtin.template:
     src: aicr-config.yaml.j2
     dest: "{{ aicr_render_dir }}/aicr-config.yaml"
-    owner: root
-    group: root
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
     mode: "0600"
   changed_when: false
   check_mode: false

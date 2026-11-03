@@ -17,22 +17,42 @@ for it, but the role works on any cluster AICR has a recipe for.
 
 | Name | Type | Does |
 |---|---|---|
-| `omerfsen.aicr.aicr` | role | Pinned `aicr`, helmfile and helm-diff; recipe and helmfile bundle from an AICRConfig; `helmfile apply`; `aicr validate` |
+| `omerfsen.aicr.aicr` | role | Pinned `aicr` (and helmfile, helm-diff); recipe and bundle from an AICRConfig; `helmfile apply` and `aicr validate`, or an Argo CD bundle written into a GitOps checkout; `aicr_state: absent` removes the stack |
 | `omerfsen.aicr.deploy` | playbook | The role on the `aicr_hosts` group (or `aicr_target`), for any cluster |
 | `omerfsen.aicr.nvke` | playbook | AICR's `nvke` recipe on an omerfsen.nvke cluster, from its bootstrap host, with the overrides NVKE needs |
+| `omerfsen.aicr.gitops` | playbook | The same recipe and overrides as an Argo CD Helm-chart bundle, rendered on this machine into a GitOps repository |
 
-## Why helmfile
+## Three ways to deploy AICR
 
 AICR renders one recipe into bundles for Helm, helmfile, Argo CD, Flux,
-Terraform or Fleet. This collection uses the helmfile bundle:
+Terraform or Fleet, and has an in-cluster operator in preview.
+
+| Method | Here | When |
+|---|---|---|
+| helmfile, applied from the bootstrap host | `nvke` / `deploy` playbooks | No controller to run first. `helmfile apply` syncs only releases that differ (rerun `changed=0`), and its levels put CRDs in place before the charts that use them. The Helm bundle's `deploy.sh` upgrades everything on every run instead |
+| Argo CD from Git (`argocd-helm` bundle) | `gitops` playbook | The cluster's state lives in a Git repository and Argo CD keeps it there. AICR's own guidance: a cluster that manages its GPU stack through Git keeps using the CLI to render (ADR-027) |
+| The AICR Operator (`oci://ghcr.io/nvidia/charts/aicr-operator`) | not supported | See below |
+
+**The AICR Operator** (Helm chart, AICR v1.2.0) runs AICR in the cluster
+and rolls the stack out through Argo CD, with approvals and plan pinning,
+from a `ClusterRuntime` resource. It is a preview (`v1alpha1`, no hardware
+profile qualified yet), and it cannot run on the KVM lab:
+
+- `ClusterRuntime.spec.intent` is required, and AICR's `nvke` recipe
+  resolves an intent only with `accelerator: gb200`; the operator takes no
+  custom recipe data (`--data`), and AICR records GeForce cards as
+  `unknown-sku`, so there is no recipe it could select for an RTX 4080.
+- It needs separate system and GPU node groups, Argo CD, and a default
+  StorageClass for its in-cluster registry (NVKE ships none).
+- It cannot adopt a stack the CLI installed.
+
+## Why helmfile for the CLI path
 
 - `helmfile apply` diffs every release and syncs only the ones that differ, so
-  a rerun with nothing new reports `changed=0`. The Helm bundle's `deploy.sh`
-  upgrades every release on every run.
+  a rerun with nothing new reports `changed=0`.
 - The bundle's release graph is split into levels, so CRDs from one level are
   in place before the next level's charts use them.
-- No controller or state store to run first, unlike Argo CD, Flux or
-  Terraform. A GitOps bundle can be rendered from the same recipe later.
+- No controller or state store to run first, unlike Flux or Terraform.
 
 ## Support matrix
 
@@ -41,10 +61,11 @@ Terraform or Fleet. This collection uses the helmfile bundle:
 | AICR | v1.2.0, pinned (`aicr_version`, `aicr_sha256`) |
 | helmfile / helm-diff | v1.8.2 / v3.15.15, pinned and checksum-verified |
 | Helm | 3 or 4 on the target host, not installed by the role (tested with v4.2.4) |
+| Argo CD | For the `argocd-helm` bundle: 2.13 or later (AICR), tested with v3.5.6 |
 | Target host | Linux, amd64 or arm64, with helm, kubectl and the cluster's admin kubeconfig |
 | Clusters | Any AICR service with a recipe (`aicr recipe --help`); the `nvke` playbook for omerfsen.nvke clusters |
 | ansible-core | 2.16 or later |
-| Tested | An NVKE v0.22.0 cluster from omerfsen.nvke on KVM (3 nodes, an RTX 4080 SUPER passed through to one), from the bootstrap host with Helm 4.2.4: AICR v1.2.0's `nvke` recipe, 11 releases deployed in 7m30s (omerfsen.nvke's GPU Operator release upgraded in place), all 69 pods running, `aicr validate` 3/3 conformance checks pass, rerun `changed=0` in 27s; omerfsen.nvke's GPU tests (nvidia-smi, CUDA, TensorFlow, PyTorch, TensorRT, DCGM metrics) 6/6 pass |
+| Tested | An NVKE v0.22.0 cluster from omerfsen.nvke on KVM (3 nodes, an RTX 4080 SUPER passed through to one). helmfile from the bootstrap host with Helm 4.2.4: 11 releases in 7m30s, `aicr validate` 3/3, rerun `changed=0` in 27s, `aicr_state=absent` removes them (rerun `changed=0`). Argo CD v3.5.6 (chart 10.11.6) from [omerfsen/gitops-public](https://github.com/omerfsen/gitops-public): the `gitops` playbook's bundle (rerun `changed=0`), 12 Applications Synced and Healthy, `aicr validate` 3/3, a deleted Deployment recreated in 37s. omerfsen.nvke's GPU tests (nvidia-smi, CUDA, TensorFlow, PyTorch, TensorRT, DCGM metrics) 6/6 on both |
 
 ## Component versions
 
@@ -117,7 +138,73 @@ image needs on top of AICR's `nvke` recipe:
   (`ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false`), as in AICR's
   GB200 NVKE recipe.
 
-More overrides go in `aicr_nvke_set` and `aicr_nvke_set_json`.
+More overrides go in `aicr_nvke_set` and `aicr_nvke_set_json`
+(the base ones are in `playbooks/vars/nvke.yml`).
+
+### With Argo CD from a GitOps repository
+
+The `gitops` playbook renders the same recipe and overrides as an Argo CD
+Helm chart (AICR's `argocd-helm` bundle) into a directory of a Git checkout.
+It runs on this machine and needs no cluster access; it does not commit.
+
+```shell
+ansible-playbook playbooks/gitops.yml \
+  -e aicr_gitops_dir=~/projects/gitops-public/nvke/aicr/lab -e @examples/nvke-kvm.yml
+```
+
+Commit the directory, then point one Application at it. The chart renders
+one child Application per component, so the root sets
+`deployer.includeRootApp: false`:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: aicr-lab, namespace: argocd}
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/omerfsen/gitops-public.git
+    targetRevision: main
+    path: nvke/aicr/lab
+    helm:
+      valuesObject: {deployer: {includeRootApp: false}}
+  destination: {server: https://kubernetes.default.svc, namespace: argocd}
+  syncPolicy: {automated: {prune: true, selfHeal: true}}
+```
+
+[omerfsen/gitops-public](https://github.com/omerfsen/gitops-public) holds
+the lab's Argo CD values, this Application and the rendered bundle.
+
+**Raise the nodes' inotify limit first.** With Argo CD's pods added, the GPU
+node ran out of inotify instances (Ubuntu's default is 128 per user) and the
+GPU device plugin crash-looped with `couldn't initialize inotify: too many
+open files`. On every node:
+
+```shell
+printf 'fs.inotify.max_user_instances = 8192\nfs.inotify.max_user_watches = 524288\n' \
+  | sudo tee /etc/sysctl.d/90-inotify.conf && sudo sysctl -p /etc/sysctl.d/90-inotify.conf
+``` Validate
+the cluster after Argo CD has synced with the `nvke` playbook and
+`-e aicr_apply=false`: it renders and validates, and applies nothing.
+
+### Removing the stack
+
+```shell
+ansible-playbook -i ~/nvke/inventory/kvm playbooks/nvke.yml -e aicr_state=absent
+```
+
+`helmfile destroy` removes the releases in reverse order. Helm leaves CRDs,
+namespaces and objects that operators created (KAI's scheduler and its
+admission webhooks). Before another installer takes over, remove them, the
+webhooks first (a webhook whose service is gone blocks pod creation):
+
+```shell
+kubectl delete validatingwebhookconfiguration kai-podgroup-validation-v2alpha2 kai-queue-validation-v2 validating-kai-admission
+kubectl delete mutatingwebhookconfiguration mutating-kai-admission
+kubectl delete ns aicr-validation cert-manager gpu-operator kai-resource-reservation kai-scheduler \
+  monitoring node-feature-discovery nodewright nvidia-dra-driver nvsentinel
+kubectl get crd -o name | grep -E 'cert-manager.io|nvidia.com|kai.scheduler|nfd.k8s-sigs.io' | xargs kubectl delete
+```
 
 ### Any other cluster
 
@@ -141,9 +228,12 @@ ansible-playbook -i inventory.yml omerfsen.aicr.deploy
 Render only, to read the bundle before anything is applied:
 
 ```shell
-ansible-playbook -i inventory.yml omerfsen.aicr.deploy -e aicr_apply=false
+ansible-playbook -i inventory.yml omerfsen.aicr.deploy -e aicr_apply=false -e aicr_validate=false
 # the bundle: /var/lib/aicr/bundle on the target host
 ```
+
+`-e aicr_apply=false` alone renders and validates the cluster without
+applying, for a stack another tool (Argo CD) deployed.
 
 `--check` renders the bundle and runs `helmfile diff` instead of `apply`.
 
@@ -153,7 +243,7 @@ ansible-playbook -i inventory.yml omerfsen.aicr.deploy -e aicr_apply=false
    GitHub release with its SHA-256 checked.
 2. **Render.** The role writes one AICRConfig (`aicr_criteria`, `aicr_set`,
    `aicr_scheduling`, the validation phases) and runs `aicr recipe` and
-   `aicr bundle --deployer helmfile` into an empty directory, with
+   `aicr bundle --deployer helmfile` (or `argocd-helm`) into an empty directory, with
    `aicr_set_json` as `--set-json` flags (the AICRConfig has no field for list
    or object overrides). AICR renders the same inputs to the same bytes, so
    the new bundle replaces the kept one in `/var/lib/aicr/bundle` only when

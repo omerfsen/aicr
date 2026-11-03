@@ -1,17 +1,23 @@
 ---
-# Tools, then the bundle, then the cluster: install a pinned aicr, helmfile and
-# helm-diff, render the recipe into a helmfile bundle and keep it only when it
-# differs from the last one, apply it (helmfile changes only the releases that
-# differ), and validate the cluster against the recipe.
+# Tools, then the bundle, then the cluster: install a pinned aicr (and
+# helmfile and helm-diff), render the recipe into a bundle and keep it only
+# when it differs from the last one, then either apply it with helmfile (only
+# the releases that differ change) and validate the cluster, or write an
+# Argo CD (argocd-helm) bundle into a GitOps checkout. aicr_state: absent
+# removes a helmfile-installed stack.
 
-- name: The kubeconfig is set and the criteria name a service
+- name: The state, deployer, kubeconfig and criteria are valid
   ansible.builtin.assert:
     that:
-      - aicr_kubeconfig | length > 0
+      - aicr_state in ['present', 'absent']
+      - aicr_deployer in ['helmfile', 'argocd-helm']
+      - aicr_deployer == 'argocd-helm' or aicr_kubeconfig | length > 0
       - aicr_criteria.service is defined and aicr_criteria.service | length > 0
     fail_msg: >-
-      Set aicr_kubeconfig to the cluster's admin kubeconfig on this host and
-      aicr_criteria.service to the recipe's service (nvke, eks, rke2, ...).
+      aicr_state is present or absent; aicr_deployer is helmfile or
+      argocd-helm. The helmfile deployer needs aicr_kubeconfig (the cluster's
+      admin kubeconfig on this host), and aicr_criteria.service names the
+      recipe's service (nvke, eks, rke2, ...).
     quiet: true
 
 - name: Read the host architecture
@@ -32,16 +38,27 @@
     fail_msg: "aicr, helmfile and helm-diff are installed for amd64 and arm64 only, not {{ aicr_uname.stdout }}."
     quiet: true
 
-- name: Install aicr, helmfile and helm-diff
+- name: Install aicr (and helmfile and helm-diff)
   ansible.builtin.include_tasks: tools.yml
+
+- name: Remove the stack
+  ansible.builtin.include_tasks: destroy.yml
+  when: aicr_state == 'absent'
 
 - name: Render the recipe and the bundle
   ansible.builtin.include_tasks: render.yml
+  when: aicr_state == 'present'
+
+- name: Write the bundle into the GitOps directory
+  ansible.builtin.include_tasks: publish.yml
+  when: aicr_state == 'present' and aicr_deployer == 'argocd-helm'
 
 - name: Apply the bundle
   ansible.builtin.include_tasks: apply.yml
-  when: aicr_apply | bool
+  when: aicr_state == 'present' and aicr_deployer == 'helmfile' and aicr_apply | bool
 
+# Validation reads the cluster, whichever tool deployed the bundle: with Argo
+# CD, run the helmfile form with aicr_apply: false once Argo CD has synced.
 - name: Validate the cluster against the recipe
   ansible.builtin.include_tasks: validate.yml
-  when: aicr_apply | bool and aicr_validate | bool and not ansible_check_mode
+  when: aicr_state == 'present' and aicr_deployer == 'helmfile' and aicr_validate | bool and not ansible_check_mode
