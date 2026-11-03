@@ -27,13 +27,12 @@
         ansible_ssh_common_args: >-
           -o StrictHostKeyChecking=accept-new
           {{ ('-o ProxyJump=' ~ (hostvars[item.kvm_host].ansible_user ~ '@' if hostvars[item.kvm_host].ansible_user is defined else '')
-              ~ hostvars[item.kvm_host].ansible_host | default(item.kvm_host)) if aicr_nvke_jump | bool else '' }}
-      vars:
-        aicr_nvke_jump: >-
-          {{ (nvke_kvm_proxy_jump | default('auto') | string | lower == 'true')
-             or (nvke_kvm_proxy_jump | default('auto') | string | lower == 'auto'
-                 and hostvars[item.kvm_host].ansible_connection | default('ssh') != 'local'
-                 and nvke_kvm_bridge | default('') | length == 0) }}
+              ~ hostvars[item.kvm_host].ansible_host | default(item.kvm_host))
+             if (nvke_kvm_proxy_jump | default('auto') | string | lower == 'true')
+                or (nvke_kvm_proxy_jump | default('auto') | string | lower == 'auto'
+                    and hostvars[item.kvm_host].ansible_connection | default('ssh') != 'local'
+                    and nvke_kvm_bridge | default('') | length == 0)
+             else '' }}
       loop: "{{ nvke_kvm_vms | default([]) | selectattr('group', 'eq', 'nvke_bootstrap') | list }}"
       loop_control: {label: "{{ item.name }} on {{ item.kvm_host }}"}
       when: groups['nvke_bootstrap'] | default([]) | length == 0
