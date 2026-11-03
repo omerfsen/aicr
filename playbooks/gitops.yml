@@ -1,0 +1,34 @@
+---
+# AICR's nvke recipe as an Argo CD bundle in a GitOps repository: renders it
+# on this machine (no cluster access) into aicr_gitops_dir, a directory in a
+# Git checkout that an Argo CD Application watches. Commit and push the
+# change; Argo CD applies it. Same overrides as the nvke playbook.
+#
+#   ansible-playbook omerfsen.aicr.gitops \
+#     -e aicr_gitops_dir=~/projects/gitops-public/nvke/aicr/lab -e @examples/nvke-kvm.yml
+#
+# The bundle is an Argo CD Helm chart (argocd-helm). Point an Application at
+# its directory with helm values deployer.includeRootApp: false; see the
+# README.
+
+- name: NVIDIA AI Cluster Runtime bundle for Argo CD
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vars/nvke.yml
+  vars:
+    aicr_deployer: argocd-helm
+    aicr_gitops_dir: ""
+    aicr_owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
+    aicr_group: "{{ lookup('ansible.builtin.pipe', 'id -gn') }}"
+    aicr_workdir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/omerfsen-aicr"
+    aicr_bin_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/omerfsen-aicr/bin"
+  pre_tasks:
+    - name: Binary directory
+      ansible.builtin.file:
+        path: "{{ aicr_bin_dir }}"
+        state: directory
+        mode: "0755"
+  roles:
+    - role: omerfsen.aicr.aicr

@@ -7,7 +7,7 @@
    | combine({'profile': aicr_profile} if aicr_profile | length > 0 else {}) %}
 {% set bundle = {'input': {'recipe': aicr_render_dir ~ '/recipe.yaml'},
                  'output': {'target': aicr_render_dir ~ '/bundle'},
-                 'deployment': {'deployer': 'helmfile', 'set': aicr_set}}
+                 'deployment': {'deployer': aicr_deployer, 'set': aicr_set}}
    | combine({'scheduling': aicr_scheduling} if aicr_scheduling | length > 0 else {}) %}
 {% set validate = {'input': {'recipe': aicr_bundle_dir ~ '/recipe.yaml'},
                    'execution': {'phases': aicr_validate_phases}

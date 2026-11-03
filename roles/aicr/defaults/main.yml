@@ -4,8 +4,21 @@
 # Runs on a host with helm and the cluster's admin kubeconfig (on NVKE, the
 # bootstrap host).
 
-# Admin kubeconfig on the target host.
+# present: render, then apply (helmfile) or write to a GitOps checkout
+# (argocd-helm). absent: destroy the stack the helmfile deployer installed.
+aicr_state: present
+# helmfile: apply the bundle from this host. argocd-helm: write an Argo CD
+# Helm-chart bundle into aicr_gitops_dir; Argo CD applies it from Git.
+aicr_deployer: helmfile
+# argocd-helm only: the directory in a Git checkout that Argo CD watches,
+# for example ~/projects/gitops-public/nvke/aicr/lab.
+aicr_gitops_dir: ""
+
+# Admin kubeconfig on the target host (helmfile deployer).
 aicr_kubeconfig: ""
+# Owner of the files and binaries the role writes (root with become).
+aicr_owner: root
+aicr_group: root
 
 # Release architecture of the host (amd64 or arm64). The role sets it from
 # `uname -m`; this value only lets the URLs below template before that.

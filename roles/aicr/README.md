@@ -16,7 +16,16 @@ and checks the cluster against it.
   runs `aicr validate`; the report is `/var/lib/aicr/validation.yaml`.
 
 Runs on a host with helm, kubectl and the cluster's admin kubeconfig, such as
-the NVKE bootstrap host. `aicr_apply: false` renders the bundle only.
+the NVKE bootstrap host. `aicr_apply: false` renders and validates without
+applying; add `aicr_validate: false` to render only.
+
+Two other modes:
+
+- `aicr_deployer: argocd-helm` with `aicr_gitops_dir`: renders an Argo CD
+  Helm-chart bundle into a directory of a Git checkout (no cluster access, no
+  commit); Argo CD applies it from the repository.
+- `aicr_state: absent`: `helmfile destroy` of the kept bundle. Helm leaves
+  CRDs, namespaces and operator-created objects behind.
 
 ```yaml
 - hosts: admin1

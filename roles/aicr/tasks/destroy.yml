@@ -1,0 +1,55 @@
+---
+# Remove a stack this role installed with the helmfile deployer: helmfile
+# destroys the kept bundle's releases in reverse dependency order. Helm keeps
+# CRDs and namespaces; see the README for removing them.
+
+- name: Look for the kept bundle
+  ansible.builtin.stat:
+    path: "{{ aicr_workdir }}/bundle/bundle-info.yaml"
+  register: aicr_kept_bundle
+
+- name: Remove the stack
+  when: aicr_kept_bundle.stat.exists
+  block:
+    - name: Read the kept bundle's release list
+      ansible.builtin.slurp:
+        src: "{{ aicr_workdir }}/bundle/bundle-info.yaml"
+      register: aicr_kept_bundle_info
+
+    - name: List the installed Helm releases
+      ansible.builtin.command:
+        argv: ["{{ aicr_helm }}", list, --all-namespaces, --output, json]
+      environment:
+        KUBECONFIG: "{{ aicr_kubeconfig }}"
+      register: aicr_helm_releases
+      changed_when: false
+      check_mode: false
+
+    - name: Find the bundle's releases among them
+      ansible.builtin.set_fact:
+        aicr_installed_releases: >-
+          {{ (aicr_kept_bundle_info.content | b64decode | from_yaml).layout.releases
+             | map(attribute='name')
+             | select('in', aicr_helm_releases.stdout | from_json | map(attribute='name') | list)
+             | list }}
+
+    - name: Destroy the releases
+      ansible.builtin.command:
+        argv:
+          - "{{ aicr_bin_dir }}/helmfile"
+          - --helm-binary
+          - "{{ aicr_helm }}"
+          - --file
+          - "{{ aicr_workdir }}/bundle/helmfile.yaml"
+          - destroy
+        chdir: "{{ aicr_workdir }}/bundle"
+      environment:
+        KUBECONFIG: "{{ aicr_kubeconfig }}"
+        HELM_PLUGINS: "{{ aicr_helm_plugins_dir }}"
+      when: aicr_installed_releases | length > 0 and not ansible_check_mode
+      changed_when: true
+
+    - name: Forget the kept bundle
+      ansible.builtin.file:
+        path: "{{ aicr_workdir }}/bundle"
+        state: absent

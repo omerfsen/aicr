@@ -1,0 +1,22 @@
+---
+# AICR's nvke recipe plus what every NVKE v0.22 cluster on the reference node
+# image needs on top of it. Shared by the nvke (helmfile) and gitops
+# (Argo CD) playbooks, so both deploy the same stack.
+#
+# - driver: AICR pins 580.173.02, which has no Ubuntu 26.04 image; the chart's
+#   newest supported driver (CUDA 13.4) has one.
+# - toolkit: NVKE ships containerd 2.3 with a version 3 config.toml; the
+#   toolkit must read that file, or its drop-in stops containerd. AICR sets
+#   this in its GB200 NVKE leaf only, not in the nvke recipe. The second
+#   variable keeps unprivileged pods from reaching GPUs they did not request.
+#
+# More overrides for a cluster go in aicr_nvke_set / aicr_nvke_set_json.
+aicr_nvke_base_set:
+  - gpuoperator:driver.version=615.71.09
+aicr_nvke_base_set_json:
+  gpuoperator:toolkit.env:
+    - {name: RUNTIME_CONFIG_SOURCE, value: file}
+    - {name: ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED, value: "false"}
+aicr_criteria: "{{ aicr_nvke_criteria | default({'service': 'nvke'}) }}"
+aicr_set: "{{ aicr_nvke_base_set + aicr_nvke_set | default([]) }}"
+aicr_set_json: "{{ aicr_nvke_base_set_json | combine(aicr_nvke_set_json | default({})) }}"
