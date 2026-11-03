@@ -1,0 +1,31 @@
+---
+# AICR's own validation: a snapshot agent Job captures the cluster, then the
+# recipe's checks run as Jobs in aicr-validation and are cleaned up. The report
+# is kept next to the bundle.
+
+- name: Wait for the GPU Operator's operands (the driver is built on each GPU node)
+  ansible.builtin.command:
+    argv:
+      - "{{ aicr_kubectl }}"
+      - wait
+      - clusterpolicies.nvidia.com/cluster-policy
+      - --for=jsonpath={.status.state}=ready
+      - --timeout={{ aicr_gpu_operator_timeout_minutes }}m
+  environment:
+    KUBECONFIG: "{{ aicr_kubeconfig }}"
+  changed_when: false
+  when: "'gpu-operator' in aicr_bundle_components"
+
+- name: Run the recipe's checks
+  ansible.builtin.command:
+    argv:
+      - "{{ aicr_bin_dir }}/aicr"
+      - validate
+      - --config
+      - "{{ aicr_render_dir }}/aicr-config.yaml"
+      - --kubeconfig
+      - "{{ aicr_kubeconfig }}"
+      - --output
+      - "{{ aicr_workdir }}/validation.yaml"
+  register: aicr_validate_result
+  changed_when: false

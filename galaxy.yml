@@ -1,0 +1,36 @@
+namespace: omerfsen
+name: aicr
+version: 0.0.0 # x-release-please-version
+readme: README.md
+authors:
+  - Omer Sen
+description: >-
+  Deploy NVIDIA AI Cluster Runtime (AICR) recipes to a Kubernetes cluster:
+  install a pinned aicr CLI, render a recipe into a helmfile bundle, apply it
+  only when it changed, and validate the cluster against the recipe.
+license:
+  - Apache-2.0
+
+tags:
+  - infrastructure
+  - aicr
+  - nvidia
+  - kubernetes
+  - k8s
+  - gpu
+  - helmfile
+  - nvke
+dependencies: {}
+repository: https://github.com/omerfsen/aicr
+documentation: https://github.com/omerfsen/aicr/blob/main/README.md
+issues: https://github.com/omerfsen/aicr/issues
+build_ignore:
+  - tests
+  - examples/*.local.yml
+  - .venv
+  - .collections
+  - .ansible
+  - .github
+  - graphify-out
+  - render
+  - bundle

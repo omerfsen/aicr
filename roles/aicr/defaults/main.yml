@@ -1,0 +1,73 @@
+---
+# NVIDIA AI Cluster Runtime (AICR) on a Kubernetes cluster: render a recipe
+# into a helmfile bundle, apply it only when it changed, validate the cluster.
+# Runs on a host with helm and the cluster's admin kubeconfig (on NVKE, the
+# bootstrap host).
+
+# Admin kubeconfig on the target host.
+aicr_kubeconfig: ""
+
+# Release architecture of the host (amd64 or arm64). The role sets it from
+# `uname -m`; this value only lets the URLs below template before that.
+aicr_arch: amd64
+
+# The aicr CLI, from the GitHub release, checksums from aicr_checksums.txt.
+aicr_version: "1.2.0"
+aicr_url: https://github.com/NVIDIA/aicr/releases/download/v{{ aicr_version }}/aicr_{{ aicr_version }}_linux_{{ aicr_arch }}.tar.gz
+aicr_sha256:
+  amd64: 3ff6935fd7988373903a2a30f1c24a74a5f8a9052a310615db19fcfec4cfe9a2
+  arm64: 26824146cd0743229239899cb75d3b68e0bc262bcdb357fccc98eca0a5b75976
+
+# helmfile, which applies the bundle (helmfile_<version>_checksums.txt).
+aicr_helmfile_version: "1.8.2"
+aicr_helmfile_url: >-
+  {{ 'https://github.com/helmfile/helmfile/releases/download/v' ~ aicr_helmfile_version
+     ~ '/helmfile_' ~ aicr_helmfile_version ~ '_linux_' ~ aicr_arch ~ '.tar.gz' }}
+aicr_helmfile_sha256:
+  amd64: f179485c5bb9f8e20fbd8ea16d8807915988aba4d60131ee864fb3232452716e
+  arm64: 9163f0d7ad088d243d7305ba09c3465aac02dfebd658d46c62dbdaa11c224b16
+
+# The helm-diff plugin helmfile's apply runs (helm-diff_<version>_checksums.txt).
+aicr_helm_diff_version: "3.15.15"
+aicr_helm_diff_url: >-
+  {{ 'https://github.com/databus23/helm-diff/releases/download/v' ~ aicr_helm_diff_version
+     ~ '/diff-' ~ aicr_helm_diff_version ~ '-linux-' ~ aicr_arch ~ '.tgz' }}
+aicr_helm_diff_sha256:
+  amd64: 504e99410611daa70702362e1b10dc74929df8a912cb3f6b5d21d1ee9d0cb7d9
+  arm64: fc046bf3c3f63a435741fe8c37a9d740dfa17ea7f5f0c2a9da2c0222bb4384e6
+
+# Where aicr and helmfile are installed. helm must already be on the host.
+aicr_bin_dir: /usr/local/bin
+aicr_helm: /usr/local/bin/helm
+aicr_kubectl: /usr/local/bin/kubectl
+# Helm plugin directory of the user the role runs as (root with become).
+aicr_helm_plugins_dir: /root/.local/share/helm/plugins
+
+# The AICRConfig, the bundle and the validation report live here.
+aicr_workdir: /var/lib/aicr
+
+# Recipe criteria, as `aicr recipe` flags: service, accelerator, intent, os,
+# platform, nodes. Only service is required.
+aicr_criteria:
+  service: nvke
+# Optional recipe configuration profile, name=value.
+aicr_profile: ""
+# Scalar value overrides, "component:path=value".
+aicr_set: []
+# List or object value overrides: component:path to any value.
+aicr_set_json: {}
+# spec.bundle.scheduling of the AICRConfig (node selectors, tolerations,
+# storage class, ...), passed through as is.
+aicr_scheduling: {}
+
+# Apply the bundle with helmfile. Off: render only.
+aicr_apply: true
+# How long to wait for the GPU Operator's operands before validating; the
+# driver is built on each GPU node.
+aicr_gpu_operator_timeout_minutes: 30
+# Validate the cluster against the recipe after the apply.
+aicr_validate: true
+# Validation phases. AICR's nvke recipe declares conformance checks only.
+aicr_validate_phases: [conformance]
+# Checks this cluster cannot satisfy; they are reported as skipped.
+aicr_validate_skip_checks: []

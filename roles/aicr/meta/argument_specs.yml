@@ -1,0 +1,118 @@
+---
+argument_specs:
+  main:
+    short_description: An NVIDIA AI Cluster Runtime recipe on a Kubernetes cluster, applied with helmfile and validated.
+    description:
+      - Installs a pinned, checksum-verified aicr CLI, helmfile and helm-diff plugin.
+      - Renders the recipe for O(aicr_criteria) into a helmfile bundle, with the value overrides in O(aicr_set) and O(aicr_set_json),
+      - and keeps it only when it differs from the bundle of the last run.
+      - Applies it with C(helmfile apply), which syncs only the releases that differ, so a rerun changes nothing.
+      - Then waits for the GPU Operator's operands and runs C(aicr validate) for the phases in O(aicr_validate_phases).
+      - Runs on a host with helm, kubectl and the cluster's admin kubeconfig, such as the NVKE bootstrap host.
+    author: Omer Sen
+    options:
+      aicr_kubeconfig:
+        type: path
+        required: true
+        description: Path of the cluster's admin kubeconfig on the target host.
+      aicr_version:
+        type: str
+        default: "1.2.0"
+        description: aicr release. Change O(aicr_sha256) with it.
+      aicr_url:
+        type: str
+        description:
+          - Where the aicr archive is downloaded from; by default the GitHub release of O(aicr_version)
+          - for the host's architecture.
+      aicr_sha256:
+        type: dict
+        description: SHA-256 of the aicr archive per architecture (C(amd64), C(arm64)), from the release's C(aicr_checksums.txt).
+      aicr_helmfile_version:
+        type: str
+        default: "1.8.2"
+        description: helmfile release. Change O(aicr_helmfile_sha256) with it.
+      aicr_helmfile_url:
+        type: str
+        description:
+          - Where the helmfile archive is downloaded from; by default the GitHub release of O(aicr_helmfile_version)
+          - for the host's architecture.
+      aicr_helmfile_sha256:
+        type: dict
+        description: SHA-256 of the helmfile archive per architecture.
+      aicr_helm_diff_version:
+        type: str
+        default: "3.15.15"
+        description: helm-diff plugin release. Change O(aicr_helm_diff_sha256) with it.
+      aicr_helm_diff_url:
+        type: str
+        description:
+          - Where the helm-diff archive is downloaded from; by default the GitHub release of O(aicr_helm_diff_version)
+          - for the host's architecture.
+      aicr_helm_diff_sha256:
+        type: dict
+        description: SHA-256 of the helm-diff archive per architecture.
+      aicr_bin_dir:
+        type: path
+        default: /usr/local/bin
+        description: Where aicr and helmfile are installed.
+      aicr_helm:
+        type: path
+        default: /usr/local/bin/helm
+        description: helm on the target host (Helm 3 or 4). The role does not install it.
+      aicr_kubectl:
+        type: path
+        default: /usr/local/bin/kubectl
+        description: kubectl on the target host.
+      aicr_helm_plugins_dir:
+        type: path
+        default: /root/.local/share/helm/plugins
+        description: Helm plugin directory of the user the role runs as.
+      aicr_workdir:
+        type: path
+        default: /var/lib/aicr
+        description: Holds the downloads, the rendered AICRConfig, recipe and bundle, the kept bundle and the validation report.
+      aicr_criteria:
+        type: dict
+        default: {service: nvke}
+        description:
+          - Recipe criteria, the C(aicr recipe) flags as keys (C(service), C(accelerator), C(intent), C(os), C(platform), C(nodes)).
+          - Only C(service) is required. A combination AICR has no recipe for fails the run with AICR's own message.
+      aicr_profile:
+        type: str
+        default: ""
+        description: Optional recipe configuration profile, C(name=value).
+      aicr_set:
+        type: list
+        elements: str
+        default: []
+        description: Scalar value overrides, C(component:path=value), as C(aicr bundle --set).
+      aicr_set_json:
+        type: dict
+        default: {}
+        description: List or object value overrides, C(component:path) to any value, as C(aicr bundle --set-json).
+      aicr_scheduling:
+        type: dict
+        default: {}
+        description: C(spec.bundle.scheduling) of the AICRConfig (node selectors, tolerations, storage class), passed through as is.
+      aicr_apply:
+        type: bool
+        default: true
+        description: Apply the bundle with helmfile. Off renders it only.
+      aicr_gpu_operator_timeout_minutes:
+        type: int
+        default: 30
+        description: How long to wait for the GPU Operator's ClusterPolicy to be ready before validating.
+      aicr_validate:
+        type: bool
+        default: true
+        description: Run C(aicr validate) after the apply.
+      aicr_validate_phases:
+        type: list
+        elements: str
+        default: [conformance]
+        description: Validation phases (C(deployment), C(conformance), C(performance)). AICR's nvke recipe declares conformance checks only.
+      aicr_validate_skip_checks:
+        type: list
+        elements: str
+        default: []
+        description: Checks this cluster cannot satisfy; AICR reports them as skipped.

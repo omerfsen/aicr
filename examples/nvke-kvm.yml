@@ -1,0 +1,10 @@
+---
+# Extra vars for omerfsen.aicr.nvke on the KVM lab cluster of omerfsen.nvke
+# (one consumer GPU passed through to a node VM, no ConnectX NICs):
+#
+#   ansible-playbook -i ~/nvke/inventory/kvm omerfsen.aicr.nvke -e @examples/nvke-kvm.yml
+#
+# The VMs have no ConnectX NICs, so NVSentinel's NIC health monitor (on in
+# AICR's nvke recipe) has nothing to watch.
+aicr_nvke_set:
+  - nvsentinel:global.nicHealthMonitor.enabled=false

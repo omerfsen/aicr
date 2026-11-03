@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  author: Omer Sen
+  description: Render an NVIDIA AI Cluster Runtime (AICR) recipe into a helmfile bundle, apply it when it changed, and validate the cluster against it.
+  license: Apache-2.0
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm]
+  galaxy_tags: [aicr, nvidia, gpu, kubernetes, helmfile]
+dependencies: []

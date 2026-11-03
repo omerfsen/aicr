@@ -1,0 +1,47 @@
+---
+# Tools, then the bundle, then the cluster: install a pinned aicr, helmfile and
+# helm-diff, render the recipe into a helmfile bundle and keep it only when it
+# differs from the last one, apply it (helmfile changes only the releases that
+# differ), and validate the cluster against the recipe.
+
+- name: The kubeconfig is set and the criteria name a service
+  ansible.builtin.assert:
+    that:
+      - aicr_kubeconfig | length > 0
+      - aicr_criteria.service is defined and aicr_criteria.service | length > 0
+    fail_msg: >-
+      Set aicr_kubeconfig to the cluster's admin kubeconfig on this host and
+      aicr_criteria.service to the recipe's service (nvke, eks, rke2, ...).
+    quiet: true
+
+- name: Read the host architecture
+  ansible.builtin.command: uname -m
+  register: aicr_uname
+  changed_when: false
+  check_mode: false
+
+- name: Map it to a release architecture
+  ansible.builtin.set_fact:
+    aicr_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[aicr_uname.stdout] | default('unsupported') }}"
+    aicr_render_dir: "{{ aicr_workdir }}/render"
+    aicr_bundle_dir: "{{ aicr_workdir }}/bundle"
+
+- name: The architecture is supported
+  ansible.builtin.assert:
+    that: aicr_arch in ['amd64', 'arm64']
+    fail_msg: "aicr, helmfile and helm-diff are installed for amd64 and arm64 only, not {{ aicr_uname.stdout }}."
+    quiet: true
+
+- name: Install aicr, helmfile and helm-diff
+  ansible.builtin.include_tasks: tools.yml
+
+- name: Render the recipe and the bundle
+  ansible.builtin.include_tasks: render.yml
+
+- name: Apply the bundle
+  ansible.builtin.include_tasks: apply.yml
+  when: aicr_apply | bool
+
+- name: Validate the cluster against the recipe
+  ansible.builtin.include_tasks: validate.yml
+  when: aicr_apply | bool and aicr_validate | bool and not ansible_check_mode

@@ -1,0 +1,12 @@
+---
+# An AICR recipe on any cluster, from a host with helm, kubectl and the admin
+# kubeconfig. The target is the aicr_hosts group, or set aicr_target.
+#
+#   ansible-playbook -i inventory.yml omerfsen.aicr.deploy
+
+- name: NVIDIA AI Cluster Runtime
+  hosts: "{{ aicr_target | default('aicr_hosts') }}"
+  become: true
+  gather_facts: false
+  roles:
+    - role: omerfsen.aicr.aicr

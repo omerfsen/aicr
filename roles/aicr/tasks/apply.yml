@@ -1,0 +1,45 @@
+---
+# helmfile diffs every release and syncs only the ones that differ, level by
+# level (a level's CRDs are in place before the next level needs them). Its
+# exit code 2 means it changed something.
+
+- name: Apply the bundle
+  ansible.builtin.command:
+    argv:
+      - "{{ aicr_bin_dir }}/helmfile"
+      - --helm-binary
+      - "{{ aicr_helm }}"
+      - --file
+      - "{{ aicr_bundle_dir }}/helmfile.yaml"
+      - apply
+      - --detailed-exitcode
+      - --suppress-secrets
+    chdir: "{{ aicr_bundle_dir }}"
+  environment:
+    KUBECONFIG: "{{ aicr_kubeconfig }}"
+    HELM_PLUGINS: "{{ aicr_helm_plugins_dir }}"
+  register: aicr_apply_result
+  changed_when: aicr_apply_result.rc == 2
+  failed_when: aicr_apply_result.rc not in [0, 2]
+  when: not ansible_check_mode
+
+- name: Show what an apply would change
+  ansible.builtin.command:
+    argv:
+      - "{{ aicr_bin_dir }}/helmfile"
+      - --helm-binary
+      - "{{ aicr_helm }}"
+      - --file
+      - "{{ (aicr_bundle_dir if aicr_bundle_diff.rc == 0 else aicr_render_dir ~ '/bundle') ~ '/helmfile.yaml' }}"
+      - diff
+      - --detailed-exitcode
+      - --suppress-secrets
+    chdir: "{{ aicr_bundle_dir if aicr_bundle_diff.rc == 0 else aicr_render_dir ~ '/bundle' }}"
+  environment:
+    KUBECONFIG: "{{ aicr_kubeconfig }}"
+    HELM_PLUGINS: "{{ aicr_helm_plugins_dir }}"
+  register: aicr_diff_result
+  changed_when: aicr_diff_result.rc == 2
+  failed_when: aicr_diff_result.rc not in [0, 2]
+  check_mode: false
+  when: ansible_check_mode

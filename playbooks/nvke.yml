@@ -1,0 +1,76 @@
+---
+# AICR's nvke recipe on an NVKE cluster built by omerfsen.nvke, from its
+# bootstrap host (helm, kubectl and the admin kubeconfig are there). Use it
+# with the same inventory as the cluster, and set nvke_gpu_operator: false
+# there: AICR then owns the GPU Operator release (same name and namespace, so
+# it is upgraded in place, not installed twice).
+#
+#   ansible-playbook -i <nvke inventory> omerfsen.aicr.nvke
+#
+# More overrides for this cluster go in aicr_nvke_set / aicr_nvke_set_json.
+
+# omerfsen.nvke's KVM inventory lists no VMs: its kvm playbook adds them at
+# run time from nvke_kvm_vms. Add the bootstrap VM the same way (same key,
+# same ProxyJump rule) when the group is empty; a static inventory is left
+# as it is.
+- name: Find the NVKE bootstrap host
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add the bootstrap VM of a KVM inventory
+      ansible.builtin.add_host:
+        name: "{{ item.name }}"
+        groups: [nvke_bootstrap]
+        ansible_host: "{{ item.ip }}"
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: "{{ nvke_kvm_ssh_key_dir | expanduser }}/{{ item.name }}_ed25519"
+        ansible_ssh_common_args: >-
+          -o StrictHostKeyChecking=accept-new
+          {{ ('-o ProxyJump=' ~ (hostvars[item.kvm_host].ansible_user ~ '@' if hostvars[item.kvm_host].ansible_user is defined else '')
+              ~ hostvars[item.kvm_host].ansible_host | default(item.kvm_host)) if aicr_nvke_jump | bool else '' }}
+      vars:
+        aicr_nvke_jump: >-
+          {{ (nvke_kvm_proxy_jump | default('auto') | string | lower == 'true')
+             or (nvke_kvm_proxy_jump | default('auto') | string | lower == 'auto'
+                 and hostvars[item.kvm_host].ansible_connection | default('ssh') != 'local'
+                 and nvke_kvm_bridge | default('') | length == 0) }}
+      loop: "{{ nvke_kvm_vms | default([]) | selectattr('group', 'eq', 'nvke_bootstrap') | list }}"
+      loop_control: {label: "{{ item.name }} on {{ item.kvm_host }}"}
+      when: groups['nvke_bootstrap'] | default([]) | length == 0
+      changed_when: false
+
+- name: NVIDIA AI Cluster Runtime on NVKE
+  hosts: nvke_bootstrap[0]
+  become: true
+  gather_facts: false
+  vars:
+    # What every NVKE v0.22 cluster on the reference node image needs on top
+    # of AICR's nvke recipe:
+    # - driver: AICR pins 580.173.02, which has no Ubuntu 26.04 image; the
+    #   chart's newest supported driver (CUDA 13.4) has one.
+    # - toolkit: NVKE ships containerd 2.3 with a version 3 config.toml; the
+    #   toolkit must read that file, or its drop-in stops containerd. AICR sets
+    #   this in its GB200 NVKE leaf only, not in the nvke recipe. The second
+    #   variable keeps unprivileged pods from reaching GPUs they did not request.
+    aicr_nvke_base_set:
+      - gpuoperator:driver.version=615.71.09
+    aicr_nvke_base_set_json:
+      gpuoperator:toolkit.env:
+        - {name: RUNTIME_CONFIG_SOURCE, value: file}
+        - {name: ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED, value: "false"}
+    aicr_kubeconfig: >-
+      {{ nvke_workdir | default('/var/lib/nvke') }}/{{ nvke_cluster_name | default('nvke-mgmt') }}/{{ nvke_cluster_name | default('nvke-mgmt') }}.kubeconfig
+    aicr_criteria: "{{ aicr_nvke_criteria | default({'service': 'nvke'}) }}"
+    aicr_set: "{{ aicr_nvke_base_set + aicr_nvke_set | default([]) }}"
+    aicr_set_json: "{{ aicr_nvke_base_set_json | combine(aicr_nvke_set_json | default({})) }}"
+  pre_tasks:
+    - name: The GPU Operator is AICR's alone
+      ansible.builtin.assert:
+        that: not (nvke_gpu_operator | default(false) | bool)
+        fail_msg: >-
+          nvke_gpu_operator is true, so omerfsen.nvke installs the GPU Operator
+          too, and the two would undo each other's values on every run. Set
+          nvke_gpu_operator: false in the cluster's inventory.
+        quiet: true
+  roles:
+    - role: omerfsen.aicr.aicr
