@@ -2,8 +2,14 @@
 # https://github.com/omerfsen/cicd. Plain KEY=value lines, read by the
 # workflows from main (so a PR cannot change them for itself).
 
-# release-please joins once its GitHub App and environments are set up.
-PIPELINES=pr-title ansible-galaxy
+PIPELINES=release-please pr-title ansible-galaxy
+
+# release-please: bumps these, writes CHANGELOG.md, tags vX.Y.Z (which
+# publishes to Galaxy through ansible-galaxy). Runs as the release GitHub
+# App (RELEASE_APP_ID / RELEASE_APP_KEY in the "release" environment).
+VERSION_FILES=version.txt galaxy.yml
+RELEASE_PLEASE_ENABLED=true
+RELEASE_PLEASE_RUNNER=ubuntu-24.04
 
 PR_TITLE_ENABLED=true
 PR_TITLE_RUNNER=ubuntu-24.04
