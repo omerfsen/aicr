@@ -10,62 +10,19 @@
       "include-v-in-tag": true,
       "include-component-in-tag": false,
       "initial-version": "0.1.0",
-      "extra-files": [
-        {
-          "type": "generic",
-          "path": "galaxy.yml"
-        }
-      ],
+      "extra-files": [{ "type": "generic", "path": "galaxy.yml" }],
       "changelog-sections": [
-        {
-          "type": "feat",
-          "section": "Features"
-        },
-        {
-          "type": "fix",
-          "section": "Bug fixes"
-        },
-        {
-          "type": "perf",
-          "section": "Performance"
-        },
-        {
-          "type": "security",
-          "section": "Security"
-        },
-        {
-          "type": "revert",
-          "section": "Reverts"
-        },
-        {
-          "type": "deps",
-          "section": "Dependencies"
-        },
-        {
-          "type": "docs",
-          "section": "Documentation",
-          "hidden": true
-        },
-        {
-          "type": "test",
-          "section": "Tests",
-          "hidden": true
-        },
-        {
-          "type": "ci",
-          "section": "CI",
-          "hidden": true
-        },
-        {
-          "type": "chore",
-          "section": "Chores",
-          "hidden": true
-        },
-        {
-          "type": "refactor",
-          "section": "Refactoring",
-          "hidden": true
-        }
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "security", "section": "Security" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "deps", "section": "Dependencies" },
+        { "type": "docs", "section": "Documentation", "hidden": true },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "ci", "section": "CI", "hidden": true },
+        { "type": "chore", "section": "Chores", "hidden": true },
+        { "type": "refactor", "section": "Refactoring", "hidden": true }
       ]
     }
   }
