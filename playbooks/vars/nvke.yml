@@ -9,8 +9,12 @@
 #   toolkit must read that file, or its drop-in stops containerd. AICR sets
 #   this in its GB200 NVKE leaf only, not in the nvke recipe. The second
 #   variable keeps unprivileged pods from reaching GPUs they did not request.
+# - charts: NVSentinel v1.30.0 and cert-manager v1.21.3 from files/latest-charts
+#   (AICR v1.2.0 pins v1.28.0 and v1.20.2, below NVSentinel's cert-manager v1.21
+#   minimum). Set aicr_nvke_data_src: "" for AICR's own pins.
 #
 # More overrides for a cluster go in aicr_nvke_set / aicr_nvke_set_json.
+aicr_data_src: "{{ aicr_nvke_data_src | default(playbook_dir ~ '/files/latest-charts') }}"
 aicr_nvke_base_set:
   - gpuoperator:driver.version=615.71.09
 aicr_nvke_base_set_json:

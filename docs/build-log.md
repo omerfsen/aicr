@@ -277,3 +277,43 @@ preparation), restarted the device plugin: ClusterPolicy `ready`,
   upgrade's, a fresh install has none.
 - Self-heal: deleted the prometheus-adapter Deployment; Argo CD recreated it,
   ready again in 37s.
+
+## 2026-11-04: NVSentinel v1.30.0 and cert-manager v1.21.3
+
+AICR v1.2.0 (the newest, and its main) pins NVSentinel v1.28.0 and cert-manager
+v1.20.2, below NVSentinel's stated cert-manager v1.21 minimum. AICR's way to move
+a version without a fork is an external registry passed as `--data`.
+
+**Failure 1:** a registry with `apiVersion: aicr.nvidia.com/v1alpha1`:
+`external registry.yaml has apiVersion ..., expected "aicr.run/v1beta1"`.
+
+**Failure 2:** a registry entry with only the version and the chart coordinates:
+`mixin "nvsentinel-nic-health-monitor" ... not in the component's registry-declared
+mixinSafeOverridePaths`. An entry replaces AICR's wholesale, so every other field
+was gone.
+
+**Fix:** `tools/gen-latest-charts.sh` copies AICR's full entries and changes only
+`helm.defaultVersion`. New role variable `aicr_data_src` copies a directory into
+the render directory and passes `--data` to `recipe`, `bundle` and `validate`;
+the `nvke` playbook defaults to `playbooks/files/latest-charts`.
+
+**kind:** `examples/kind-nvsentinel` needs an overlay, since `--set` alone is
+refused. In order: `global.mongodbStore.enabled` with a remediation stage ("Use a
+remediation step mixin"); then the `nvsentinel-mongodb` component in the overlay
+("sets identity/sourcing field type"), so its size goes in `aicr_set`; then
+`--system-node-selector` is required; then the remediation mixin needs the
+analyzer and metadata-collector, and metadata-collector needs NVML, which a kind
+node has not. So the example uses `nvsentinel-quarantine`: detect, cordon, drain,
+and no fault-remediation or janitor.
+
+Tested with no cluster (`aicr_apply=false`): the `deploy` playbook renders the kind
+and nvke bundles with nvsentinel v1.30.0 and cert-manager v1.21.3, a rerun is
+`changed=0`, the `gitops` playbook renders `targetRevision: v1.30.0`, and the kind
+bundle's values render against the v1.30.0 chart.
+
+Applied on kind with Kubernetes v1.36.4, through the `deploy` playbook: nvsentinel v1.30.0,
+cert-manager v1.21.3 and one-member Percona came up, and nvidia-nvsentinel-mcp's scenarios passed
+against them (https://github.com/omerfsen/nvidia-nvsentinel-mcp/tree/main/docs/test-results).
+
+Not tested: applying this to NVKE, `aicr validate` with the new charts, or the in-place upgrade
+from v1.28.0.

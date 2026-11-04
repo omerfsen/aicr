@@ -69,23 +69,30 @@ profile qualified yet), and it cannot run on the KVM lab:
 
 ## Component versions
 
-What AICR v1.2.0's `nvke` recipe installs (`aicr recipe --service nvke`):
+What the `nvke` playbook installs: AICR v1.2.0's `nvke` recipe, with two charts
+newer than AICR pins (NVSentinel v1.28.0 and cert-manager v1.20.2 upstream), set
+through AICR's `--data` override in `playbooks/files/latest-charts`. Set
+`aicr_nvke_data_src: ""` to use AICR's own pins.
 
 | Release | Namespace | Version |
 |---|---|---|
 | nodewright-operator | nodewright | v0.20.0 |
 | prometheus-operator-crds | monitoring | 28.0.1 |
-| cert-manager | cert-manager | v1.20.2 |
+| cert-manager | cert-manager | v1.21.3 |
 | kube-prometheus-stack | monitoring | 84.4.0 |
 | k8s-ephemeral-storage-metrics | monitoring | 1.19.2 |
 | nfd | node-feature-discovery | 0.20.1 |
 | gpu-operator | gpu-operator | v26.7.2 |
 | kai-scheduler | kai-scheduler | v0.16.9 |
 | nvidia-dra-driver-gpu | nvidia-dra-driver | 0.5.1 |
-| nvsentinel | nvsentinel | v1.28.0 |
+| nvsentinel | nvsentinel | v1.30.0 |
 | prometheus-adapter | monitoring | 5.3.0 |
 
 `dra-node-labeler`, the twelfth component, has no release of its own.
+
+To change these versions after an AICR bump, or pin others, run
+`tools/gen-latest-charts.sh <aicr checkout>`: AICR replaces a registry entry
+wholesale, so the override carries the full entry with only the version changed.
 
 ## Quick start
 
@@ -138,8 +145,25 @@ image needs on top of AICR's `nvke` recipe:
   (`ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false`), as in AICR's
   GB200 NVKE recipe.
 
+- **Newer charts.** NVSentinel v1.30.0 and cert-manager v1.21.3 (see
+  [Component versions](#component-versions)). Rendered for NVKE, not applied there
+  yet; the same charts ran on kind.
+
 More overrides go in `aicr_nvke_set` and `aicr_nvke_set_json`
 (the base ones are in `playbooks/vars/nvke.yml`).
+
+### NVSentinel alone on kind
+
+`examples/kind-nvsentinel` cuts AICR's kind recipe down to NVSentinel, cert-manager
+and Percona, with the quarantine step on and no GPU stack. It is the install behind
+[nvidia-nvsentinel-mcp](https://github.com/omerfsen/nvidia-nvsentinel-mcp)'s fake
+DCGM tests. Applied to a kind cluster (Kubernetes v1.36.4): NVSentinel v1.30.0 detected, cordoned
+and drained on a simulated DCGM fault.
+
+```shell
+ansible-playbook playbooks/deploy.yml -i localhost, -c local -e aicr_target=localhost \
+  -e @examples/kind-nvsentinel/vars.yml -e aicr_kubeconfig=<kind kubeconfig>
+```
 
 ### With Argo CD from a GitOps repository
 

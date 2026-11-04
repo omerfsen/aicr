@@ -122,6 +122,12 @@ argument_specs:
         type: dict
         default: {}
         description: C(spec.bundle.scheduling) of the AICRConfig (node selectors, tolerations, storage class), passed through as is.
+      aicr_data_src:
+        type: str
+        default: ""
+        description:
+          - A directory on the controller with AICR external data (C(registry.yaml) and optional overlays), passed as C(--data).
+          - For example to run a chart newer than AICR pins. Empty uses AICR's embedded data only.
       aicr_apply:
         type: bool
         default: true

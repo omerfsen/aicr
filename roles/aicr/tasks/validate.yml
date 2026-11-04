@@ -18,14 +18,9 @@
 
 - name: Run the recipe's checks
   ansible.builtin.command:
-    argv:
-      - "{{ aicr_bin_dir }}/aicr"
-      - validate
-      - --config
-      - "{{ aicr_render_dir }}/aicr-config.yaml"
-      - --kubeconfig
-      - "{{ aicr_kubeconfig }}"
-      - --output
-      - "{{ aicr_workdir }}/validation.yaml"
+    argv: >-
+      {{ [aicr_bin_dir ~ '/aicr', 'validate', '--config', aicr_render_dir ~ '/aicr-config.yaml',
+          '--kubeconfig', aicr_kubeconfig, '--output', aicr_workdir ~ '/validation.yaml']
+         + aicr_data_args }}
   register: aicr_validate_result
   changed_when: false

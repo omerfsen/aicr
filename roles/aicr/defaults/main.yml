@@ -72,6 +72,10 @@ aicr_set_json: {}
 # spec.bundle.scheduling of the AICRConfig (node selectors, tolerations,
 # storage class, ...), passed through as is.
 aicr_scheduling: {}
+# A directory on the controller with AICR external data (registry.yaml and
+# optional overlays), passed as --data; for example to run a chart newer than
+# AICR pins. Empty: AICR's embedded data only.
+aicr_data_src: ""
 
 # Apply the bundle with helmfile. Off: render only.
 aicr_apply: true
