@@ -311,5 +311,9 @@ and nvke bundles with nvsentinel v1.30.0 and cert-manager v1.21.3, a rerun is
 `changed=0`, the `gitops` playbook renders `targetRevision: v1.30.0`, and the kind
 bundle's values render against the v1.30.0 chart.
 
-Not tested: applying any of this to a cluster, `aicr validate` with the new charts,
-or the in-place upgrade from v1.28.0.
+Applied on kind with Kubernetes v1.36.4, through the `deploy` playbook: nvsentinel v1.30.0,
+cert-manager v1.21.3 and one-member Percona came up, and nvidia-nvsentinel-mcp's scenarios passed
+against them (https://github.com/omerfsen/nvidia-nvsentinel-mcp/tree/main/docs/test-results).
+
+Not tested: applying this to NVKE, `aicr validate` with the new charts, or the in-place upgrade
+from v1.28.0.

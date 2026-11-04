@@ -146,8 +146,8 @@ image needs on top of AICR's `nvke` recipe:
   GB200 NVKE recipe.
 
 - **Newer charts.** NVSentinel v1.30.0 and cert-manager v1.21.3 (see
-  [Component versions](#component-versions)). Rendered, not yet applied to a
-  cluster.
+  [Component versions](#component-versions)). Rendered for NVKE, not applied there
+  yet; the same charts ran on kind.
 
 More overrides go in `aicr_nvke_set` and `aicr_nvke_set_json`
 (the base ones are in `playbooks/vars/nvke.yml`).
@@ -157,7 +157,8 @@ More overrides go in `aicr_nvke_set` and `aicr_nvke_set_json`
 `examples/kind-nvsentinel` cuts AICR's kind recipe down to NVSentinel, cert-manager
 and Percona, with the quarantine step on and no GPU stack. It is the install behind
 [nvidia-nvsentinel-mcp](https://github.com/omerfsen/nvidia-nvsentinel-mcp)'s fake
-DCGM tests. Rendered, not yet applied to a cluster.
+DCGM tests. Applied to a kind cluster (Kubernetes v1.36.4): NVSentinel v1.30.0 detected, cordoned
+and drained on a simulated DCGM fault.
 
 ```shell
 ansible-playbook playbooks/deploy.yml -i localhost, -c local -e aicr_target=localhost \
