@@ -1,0 +1,38 @@
+---
+# AICR's kind recipe cut down to NVSentinel: no GPU stack, the quarantine step
+# (cordon and drain, no fault-remediation) and Percona. For testing NVSentinel's
+# pipeline against a simulated DCGM, on a cluster with no GPU.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1beta1
+metadata:
+  name: kind
+spec:
+  criteria:
+    service: kind
+  mixins:
+    - nvsentinel-quarantine
+  componentRefs:
+    - {name: gpu-operator, type: Helm, overrides: {enabled: false}}
+    - {name: kube-prometheus-stack, type: Helm, overrides: {enabled: false}}
+    - {name: k8s-ephemeral-storage-metrics, type: Helm, overrides: {enabled: false}}
+    - {name: nodewright-operator, type: Helm, overrides: {enabled: false}}
+    - {name: nfd, type: Helm, overrides: {enabled: false}}
+    - {name: kai-scheduler, type: Helm, overrides: {enabled: false}}
+    - {name: nvidia-dra-driver-gpu, type: Helm, overrides: {enabled: false}}
+    - {name: prometheus-adapter, type: Helm, overrides: {enabled: false}}
+    - {name: dra-node-labeler, type: Helm, overrides: {enabled: false}}
+    - name: nvsentinel
+      type: Helm
+      overrides:
+        # One GPU node: the breaker would trip on the first cordon.
+        fault-quarantine: {circuitBreaker: {enabled: false}}
+        node-drainer:
+          userNamespaces: [{name: "*", mode: Immediate}]
+          systemNamespaces: "^(nvsentinel|kube-system|gpu-operator|cert-manager|local-path-storage|monitoring|psmdb-operator)$"
+        global:
+          # Nodes are labelled by hand and have no driver: these would strip the
+          # labels and crash on missing NVML. The syslog XID check needs kernel
+          # transport journal entries, which a kind node cannot safely produce.
+          labeler: {enabled: false}
+          metadataCollector: {enabled: false}
+          syslogHealthMonitor: {enabled: false}

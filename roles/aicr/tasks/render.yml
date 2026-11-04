@@ -39,9 +39,26 @@
   changed_when: false
   check_mode: false
 
+- name: The external data flags
+  ansible.builtin.set_fact:
+    aicr_data_args: "{{ ['--data', aicr_render_dir ~ '/data'] if aicr_data_src | length > 0 else [] }}"
+
+# Inside the render directory: what it changes shows up as a bundle difference.
+- name: Copy the external data
+  ansible.builtin.copy:
+    src: "{{ aicr_data_src | regex_replace('/*$', '') }}/"
+    dest: "{{ aicr_render_dir }}/data/"
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
+    mode: "0600"
+    directory_mode: "0700"
+  changed_when: false
+  check_mode: false
+  when: aicr_data_src | length > 0
+
 - name: Render the recipe
   ansible.builtin.command:
-    argv: ["{{ aicr_bin_dir }}/aicr", recipe, --config, "{{ aicr_render_dir }}/aicr-config.yaml"]
+    argv: "{{ [aicr_bin_dir ~ '/aicr', 'recipe', '--config', aicr_render_dir ~ '/aicr-config.yaml'] + aicr_data_args }}"
   changed_when: false
   check_mode: false
 
@@ -50,6 +67,7 @@
   ansible.builtin.command:
     argv: >-
       {{ [aicr_bin_dir ~ '/aicr', 'bundle', '--config', aicr_render_dir ~ '/aicr-config.yaml']
+         + aicr_data_args
          + (['--set-json'] | product(aicr_set_json | dict2items
               | map(attribute='key')
               | zip(aicr_set_json | dict2items | map(attribute='value') | map('to_json'))

@@ -1,0 +1,23 @@
+---
+# NVSentinel v1.30.0 alone on a kind cluster, with the quarantine step on and no
+# GPU stack: for testing its pipeline against a simulated DCGM. omerfsen.aicr's
+# deploy playbook with these vars; set aicr_kubeconfig to the kind cluster's.
+#
+#   ansible-playbook omerfsen.aicr.deploy -i localhost, -c local \
+#     -e aicr_target=localhost -e @examples/kind-nvsentinel/vars.yml \
+#     -e aicr_kubeconfig=<kubeconfig>
+aicr_criteria:
+  service: kind
+aicr_data_src: "{{ playbook_dir }}/../examples/kind-nvsentinel/data"
+aicr_scheduling:
+  systemNodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  systemNodeTolerations:
+    - node-role.kubernetes.io/control-plane=:NoSchedule
+aicr_set:
+  - nvsentinel-mongodb:unsafeFlags.replsetSize=true
+  - nvsentinel-mongodb:replsets.rs0.size=1
+  - nvsentinel-mongodb:replsets.rs0.volumeSpec.pvc.resources.requests.storage=3Gi
+  - nvsentinel-mongodb:replsets.rs0.volumeSpec.pvc.storageClassName=standard
+# The recipe's validators need a GPU stack this cluster does not have.
+aicr_validate: false
