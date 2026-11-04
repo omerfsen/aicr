@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/omerfsen/aicr/compare/v0.2.0...v0.3.0) (2026-11-04)
+
+
+### Features
+
+* **aicr:** run NVSentinel v1.30.0 and cert-manager v1.21.3 ([#8](https://github.com/omerfsen/aicr/issues/8)) ([05a2fd0](https://github.com/omerfsen/aicr/commit/05a2fd099841f7e2e305b40ee0f9145c48a90483))
+
 ## [0.2.0](https://github.com/omerfsen/aicr/compare/v0.1.0...v0.2.0) (2026-11-03)
 
 
