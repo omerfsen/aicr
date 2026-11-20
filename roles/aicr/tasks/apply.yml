@@ -3,6 +3,49 @@
 # level (a level's CRDs are in place before the next level needs them). Its
 # exit code 2 means it changed something.
 
+# helmfile never updates a chart's crds/ on upgrade, and AICR requires the new
+# CRDs before every upgrade of a component that owns them (ownsCRDs). AICR's
+# helm bundle carries a script per such component that does it (pull the
+# pinned chart, server-side apply its CRDs as manager helm, skip a release
+# that is not installed yet); the role renders that bundle beside the
+# helmfile one and runs them, only when the bundle changed.
+- name: Apply the CRDs of upgraded components
+  when: aicr_apply_crds | bool and aicr_bundle_diff.rc != 0 and not ansible_check_mode
+  block:
+    - name: Render the helm bundle for its CRD scripts
+      ansible.builtin.command:
+        argv: >-
+          {{ [aicr_bin_dir ~ '/aicr', 'bundle', '--config', aicr_render_dir ~ '/aicr-config.yaml',
+              '--deployer', 'helm', '--output', aicr_render_dir ~ '/crds']
+             + aicr_data_args
+             + (['--set-json'] | product(aicr_set_json | dict2items
+                  | map(attribute='key')
+                  | zip(aicr_set_json | dict2items | map(attribute='value') | map('to_json'))
+                  | map('join', '=')) | flatten(levels=1)) }}
+      changed_when: false
+
+    - name: Find the CRD scripts
+      ansible.builtin.find:
+        paths: "{{ aicr_render_dir }}/crds"
+        patterns: apply-crds.sh
+        recurse: true
+      register: aicr_crd_scripts
+
+    - name: Apply the CRDs
+      ansible.builtin.command:
+        argv: [bash, "{{ item.path }}"]
+      environment:
+        KUBECONFIG: "{{ aicr_kubeconfig }}"
+        PATH: "{{ aicr_helm | dirname }}:{{ aicr_kubectl | dirname }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      loop: "{{ aicr_crd_scripts.files | sort(attribute='path') }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      register: aicr_crd_apply
+      # The script is silent when it applied CRDs and says so when it skipped.
+      changed_when: >-
+        'helm install creates them' not in aicr_crd_apply.stdout
+        and 'ships no CRDs' not in aicr_crd_apply.stdout
+
 - name: Apply the bundle
   ansible.builtin.command:
     argv:

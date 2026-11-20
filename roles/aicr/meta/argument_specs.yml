@@ -156,6 +156,13 @@ argument_specs:
         type: bool
         default: true
         description: Apply the bundle with helmfile. Off renders it only.
+      aicr_apply_crds:
+        type: bool
+        default: true
+        description:
+          - With the helmfile deployer, when the bundle changed, apply the new CRDs of every installed component that owns
+            them (AICR's C(ownsCRDs)) before C(helmfile apply), which never updates a chart's C(crds/).
+          - Runs the C(apply-crds.sh) scripts of AICR's helm bundle for the same recipe; a release not installed yet is skipped.
       aicr_gpu_operator_timeout_minutes:
         type: int
         default: 30

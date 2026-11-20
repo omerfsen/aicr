@@ -93,6 +93,10 @@ aicr_runtime_metrics: {}
 aicr_upgrade_check: report
 # Apply the bundle with helmfile. Off: render only.
 aicr_apply: true
+# helmfile: when the bundle changed, apply the new CRDs of every installed
+# component that owns them before the upgrade, with the scripts of AICR's helm
+# bundle (helmfile never updates crds/; AICR requires this step).
+aicr_apply_crds: true
 # How long to wait for the GPU Operator's operands before validating; the
 # driver is built on each GPU node.
 aicr_gpu_operator_timeout_minutes: 30
