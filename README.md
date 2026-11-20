@@ -65,7 +65,7 @@ profile qualified yet), and it cannot run on the KVM lab:
 | Target host | Linux, amd64 or arm64, with helm, kubectl and the cluster's admin kubeconfig |
 | Clusters | Any AICR service with a recipe (`aicr recipe --help`); the `nvke` playbook for omerfsen.nvke clusters |
 | ansible-core | 2.16 or later |
-| Tested | An NVKE v0.22.0 cluster from omerfsen.nvke on KVM (3 nodes, an RTX 4080 SUPER passed through to one). helmfile from the bootstrap host with Helm 4.2.4: 11 releases in 7m30s, `aicr validate` 3/3, rerun `changed=0` in 27s, `aicr_state=absent` removes them (rerun `changed=0`). Argo CD v3.5.6 (chart 10.11.6) from [omerfsen/gitops-public](https://github.com/omerfsen/gitops-public): the `gitops` playbook's bundle (rerun `changed=0`), 12 Applications Synced and Healthy, `aicr validate` 3/3, a deleted Deployment recreated in 37s. omerfsen.nvke's GPU tests (nvidia-smi, CUDA, TensorFlow, PyTorch, TensorRT, DCGM metrics) 6/6 on both |
+| Tested | AICR v1.3.0 on an NVKE v0.22.0 cluster from omerfsen.nvke on KVM (3 nodes, an RTX 4080 SUPER passed through to one, VMs sized as in [Upgrading](#upgrading-from-omerfsenaicr-030-aicr-v120)): upgraded in place from this collection's 0.3.0 (AICR v1.2.0), `aicr validate` 3/3, rerun `changed=0` in 27s, omerfsen.nvke's GPU tests (nvidia-smi, CUDA, TensorFlow, PyTorch, TensorRT, DCGM metrics) 6/6; the extras example (a mixin and runtime metrics) applied, validated and rerun `changed=0`. AICR v1.2.0 (0.2.0): helmfile 11 releases in 7m30s, `aicr_state=absent`, and Argo CD v3.5.6 from [omerfsen/gitops-public](https://github.com/omerfsen/gitops-public) with self-heal; see [docs/build-log.md](docs/build-log.md) |
 
 ## Component versions
 
@@ -159,6 +159,85 @@ image needs on top of AICR's `nvke` recipe:
 
 More overrides go in `aicr_nvke_set` and `aicr_nvke_set_json`
 (the base ones are in `playbooks/vars/nvke.yml`).
+
+### Upgrading from omerfsen.aicr 0.3.0 (AICR v1.2.0)
+
+Rerun the `nvke` playbook. Before anything is applied the role compares the
+bundle the cluster runs with the new one (`aicr upgrade-check`) and shows the
+report; on the lab it reads:
+
+```text
+COMPONENT              FROM     TO       VERDICT  NOTES
+kube-prometheus-stack  84.4.0   84.5.0   manual   1 minor, 3 steps, ...
+nktp                   -        0.2.0    -        new component, nothing to do
+nodewright-operator    v0.20.0  v0.21.0  safe     1 minor, verified
+nvsentinel             v1.30.0  v1.31.0  manual   1 minor, 5 steps
+```
+
+Run it with `-e aicr_upgrade_check=enforce` first to stop there and read the
+steps (`/var/lib/aicr/upgrade-check.txt` on the bootstrap host). On the
+`nvke` recipe:
+
+- **NVSentinel:** the analyzer, remediation and reboot-image steps do not
+  apply (none of them is composed). Its new CRDs are applied by the role
+  before `helmfile apply` (`aicr_apply_crds`).
+- **kube-prometheus-stack:** Grafana, Alertmanager, node-exporter,
+  kube-state-metrics and the Prometheus history go; NKTP replaces them.
+  After the upgrade, delete what Helm does not own:
+
+  ```shell
+  kubectl delete pvc --ignore-not-found -n monitoring prometheus-kube-prometheus-prometheus-db-prometheus-kube-prometheus-prometheus-0
+  kubectl delete secret --ignore-not-found -n monitoring kube-prometheus-admission
+  kubectl delete service --ignore-not-found -n kube-system kube-prometheus-kubelet
+  ```
+
+**The KVM lab needs bigger VMs.** NKTP requests about 14 GiB of memory across
+the cluster, and AICR's validation agent a free CPU on the GPU node. On
+omerfsen.nvke's default sizes (4 vCPU / 8 GiB nodes, 8 vCPU / 24 GiB GPU node)
+NVSentinel's upgrade and then the validation Job stayed Pending. In the nvke
+inventory:
+
+```yaml
+nvke_kvm_vm_sizes:
+  nvke-cp-01: {vcpus: 6, memory_mb: 16384}
+  nvke-cp-02: {vcpus: 6, memory_mb: 16384}
+  nvke-cp-03: {vcpus: 12, memory_mb: 32768}
+```
+
+The sizes apply when a VM is created; resize a running lab one VM at a time
+with `virsh shutdown`, `virsh setmaxmem/setmem/setvcpus --config`, `virsh start`.
+
+If an upgrade fails half way (a release left `failed`), the rerun syncs that
+release again: helm-diff sees no difference in a failed release, so
+`helmfile apply` alone would leave it.
+
+### Mixins, runtime metrics and CNCF evidence
+
+`examples/nvke-kvm-extras.yml` turns on two AICR v1.3.0 features on the lab:
+
+```shell
+ansible-playbook -i ~/nvke/inventory/kvm playbooks/nvke.yml \
+  -e @examples/nvke-kvm.yml -e @examples/nvke-kvm-extras.yml
+```
+
+- `aicr_mixins: [nvsentinel-observe, ...]` composes AICR's opt-in mixins
+  (NVSentinel's object monitor, observe and remediation steps, external
+  remediation, maintenance requests, CSP health monitors, ...). AICR has no
+  flag for them; the role writes one more leaf overlay, with the recipe's
+  criteria and the mixins, and checks that AICR applied it last. Some mixins
+  need more: `nvsentinel-observe` brings a MongoDB datastore, which needs a
+  system node selector (`aicr_scheduling`) and storage.
+- `aicr_runtime_metrics: {namespaces: [...], series: [...]}`: since v1.3.0 the
+  runtime Prometheus keeps only the series AICR's components query. This adds
+  a workload's ServiceMonitors and series.
+- `aicr_validate_evidence` is passed to AICR as `spec.validate.evidence`. With
+  `cncf: {cncfSubmission: true, vendor: {...}}` validation also writes the CNCF
+  AI Conformance submission directory to `/var/lib/aicr/evidence`. AICR first
+  checks that the recipe's conformance checks can establish every applicable
+  MUST requirement. AICR's generic `nvke` recipe declares three checks, so on
+  the lab it is refused before any check runs (`the recipe's conformance checks
+  cannot establish 7 applicable MUST requirement(s) of the v1.36 checklist`);
+  NVIDIA publishes evidence for its NVKE GB200, GB300 and VR200 recipes.
 
 ### NVSentinel alone on kind
 
