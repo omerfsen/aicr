@@ -39,8 +39,11 @@
   changed_when: false
   check_mode: false
 
+# The recipe without the mixins reads only aicr_data_src; everything after it
+# reads the data with the mixin overlay too.
 - name: The external data flags
   ansible.builtin.set_fact:
+    aicr_data_args_plain: "{{ ['--data', aicr_render_dir ~ '/data'] if aicr_data_src | length > 0 else [] }}"
     aicr_data_args: >-
       {{ ['--data', aicr_render_dir ~ '/data']
          if aicr_data_src | length > 0 or aicr_mixins | length > 0 else [] }}
@@ -60,7 +63,7 @@
 
 - name: Render the recipe
   ansible.builtin.command:
-    argv: "{{ [aicr_bin_dir ~ '/aicr', 'recipe', '--config', aicr_render_dir ~ '/aicr-config.yaml'] + aicr_data_args }}"
+    argv: "{{ [aicr_bin_dir ~ '/aicr', 'recipe', '--config', aicr_render_dir ~ '/aicr-config.yaml'] + aicr_data_args_plain }}"
   changed_when: false
   check_mode: false
 
@@ -119,11 +122,21 @@
 
 # The bundle the cluster runs: with helmfile the last one applied in full
 # (<workdir>/applied, kept after a successful apply, so a failed apply is
-# checked again on the rerun), else the last one rendered.
-- name: Find the last applied bundle
+# checked again on the rerun); with argocd-helm the one in the GitOps
+# directory, which Argo CD syncs. Before either exists, the last one rendered.
+- name: Find the bundle the cluster runs
   ansible.builtin.stat:
-    path: "{{ aicr_applied_dir }}/bundle-info.yaml"
-  register: aicr_applied_stat
+    path: >-
+      {{ (aicr_gitops_dir | expanduser if aicr_deployer == 'argocd-helm' else aicr_applied_dir)
+         ~ '/bundle-info.yaml' }}
+  register: aicr_running_stat
+  when: aicr_deployer == 'helmfile' or aicr_gitops_dir | length > 0
+
+- name: Remember where it is
+  ansible.builtin.set_fact:
+    aicr_running_dir: >-
+      {{ aicr_running_stat.stat.path | dirname
+         if aicr_running_stat.stat.exists | default(false) else aicr_bundle_dir }}
 
 - name: Compare the new bundle with the one the cluster runs
   ansible.builtin.command:
@@ -132,7 +145,7 @@
       - -r
       - -q
       - "{{ aicr_render_dir }}/bundle"
-      - "{{ aicr_applied_dir if aicr_applied_stat.stat.exists else aicr_bundle_dir }}"
+      - "{{ aicr_running_dir }}"
   register: aicr_running_diff
   changed_when: false
   check_mode: false
@@ -147,7 +160,7 @@
       - "{{ aicr_bin_dir }}/aicr"
       - upgrade-check
       - --from
-      - "{{ aicr_applied_dir if aicr_applied_stat.stat.exists else aicr_bundle_dir }}"
+      - "{{ aicr_running_dir }}"
       - --to
       - "{{ aicr_render_dir }}/bundle"
       - --deployer
@@ -156,7 +169,7 @@
   register: aicr_upgrade_check_result
   changed_when: false
   check_mode: false
-  when: aicr_upgrade_check != 'off' and aicr_running_diff.rc == 1
+  when: aicr_upgrade_check_mode != 'off' and aicr_running_diff.rc == 1
 
 - name: Upgrade check
   when: aicr_upgrade_check_result.stdout is defined
@@ -178,7 +191,7 @@
     - name: Every change is safe, or the check only reports
       ansible.builtin.assert:
         that: >-
-          aicr_upgrade_check == 'report'
+          aicr_upgrade_check_mode == 'report'
           or aicr_upgrade_check_result.stdout_lines
              | select('match', '^\\S+\\s+\\S+\\s+\\S+\\s+(manual|unsafe|unknown)(\\s|$)')
              | list | length == 0

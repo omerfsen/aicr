@@ -390,3 +390,31 @@ time without a system node selector (its MongoDB datastore), AICR's own check.
 the generic nvke recipe's three conformance checks cannot establish 7 MUST
 requirements of the v1.36 checklist. The vendor block and evidence settings
 the role passes were accepted.
+
+**Review fixes** (an independent review of the diff, each reproduced, fixed and
+rerun offline or on a throwaway k3d cluster):
+
+- `aicr_mixins` without `aicr_data_src` failed: the first recipe render passed
+  `--data` before the role had created the directory. It now reads only
+  `aicr_data_src`.
+- A `nodes` criterion went into the mixin overlay, which AICR rejects (`nodes`
+  no longer selects overlays). It is left out.
+- `aicr_upgrade_check: off` unquoted in YAML is `false`; the role now reads it as
+  `off`.
+- `argocd-helm` compared with the last bundle rendered on this machine, so with
+  a new work directory `enforce` saw nothing and overwrote the GitOps directory.
+  It now compares with the bundle in the GitOps directory.
+- Helm refuses any upgrade of a `pending-*` release, so syncing one could only
+  fail again. The role syncs `failed` releases and stops with a message for
+  `pending-*` ones (roll back or uninstall first).
+
+k3d (k3s v1.35.5) with the kind NVSentinel example (control-plane label `"true"`,
+storage class `local-path`): first install 6 releases, rerun `changed=0` in 11 s;
+a release marked `failed` was synced (revision 2 deployed), rerun `changed=0`;
+marked `pending-upgrade`, the run stopped with the message.
+
+**Argo CD** (v3.5.6, chart 10.11.6) on the lab, after `aicr_state=absent` (all 12
+releases removed; KAI webhooks, namespaces and CRDs cleaned up as in the README,
+which now also lists KAI's `scheduling.run.ai` CRDs): the gitops-public branch
+with the v1.3.0 bundle, 13 Applications Synced and Healthy in 5.5 minutes,
+`aicr validate` 3/3 (`aicr_apply=false`), a deleted Deployment recreated in 3 s.

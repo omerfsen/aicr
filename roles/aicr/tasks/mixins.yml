@@ -3,7 +3,8 @@
 # composed by an overlay; AICR has no flag for them. The role writes one more
 # leaf: same criteria as the recipe just rendered, based on the overlay that
 # recipe ended on, adding only the mixins. AICR applies it last, so the
-# recipe is the same plus the mixins.
+# recipe is the same plus the mixins. `nodes` is a recipe input, not an
+# overlay criterion, and `any` matches everything, so both are left out.
 
 - name: Read the recipe without the mixins
   ansible.builtin.slurp:
@@ -30,7 +31,8 @@
           'apiVersion': 'aicr.run/v1beta1',
           'metadata': {'name': 'omerfsen-aicr-mixins'},
           'spec': {'base': aicr_plain.metadata.appliedOverlays | last,
-                   'criteria': aicr_plain.criteria | dict2items | rejectattr('value', 'eq', 'any') | items2dict,
+                   'criteria': aicr_plain.criteria | dict2items | rejectattr('value', 'eq', 'any')
+                               | rejectattr('key', 'eq', 'nodes') | items2dict,
                    'mixins': aicr_mixins}}
          | to_nice_yaml(indent=2, sort_keys=false) }}
     dest: "{{ aicr_render_dir }}/data/overlays/omerfsen-aicr-mixins.yaml"
