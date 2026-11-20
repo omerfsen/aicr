@@ -25,11 +25,11 @@ aicr_group: root
 aicr_arch: amd64
 
 # The aicr CLI, from the GitHub release, checksums from aicr_checksums.txt.
-aicr_version: "1.2.0"
+aicr_version: "1.3.0"
 aicr_url: https://github.com/NVIDIA/aicr/releases/download/v{{ aicr_version }}/aicr_{{ aicr_version }}_linux_{{ aicr_arch }}.tar.gz
 aicr_sha256:
-  amd64: 3ff6935fd7988373903a2a30f1c24a74a5f8a9052a310615db19fcfec4cfe9a2
-  arm64: 26824146cd0743229239899cb75d3b68e0bc262bcdb357fccc98eca0a5b75976
+  amd64: 01a85fcb82b71af7699d48165aa5bb771e0201f6b492cb39066a19da77579eea
+  arm64: 15c50d4c356a33bfcbf86ec45f391c4e8e098dc88aaea4fd9d6176cd543e5c35
 
 # helmfile, which applies the bundle (helmfile_<version>_checksums.txt).
 aicr_helmfile_version: "1.8.2"
@@ -76,7 +76,21 @@ aicr_scheduling: {}
 # optional overlays), passed as --data; for example to run a chart newer than
 # AICR pins. Empty: AICR's embedded data only.
 aicr_data_src: ""
+# Opt-in recipe mixins, for example nvsentinel-observe or
+# nvsentinel-object-monitor. AICR has no flag for them: the role composes
+# them on top of the recipe's own leaf through an overlay it writes into the
+# external data.
+aicr_mixins: []
+# spec.bundle.runtimeMetrics: what the runtime Prometheus keeps on top of the
+# series AICR's own components declare. series: RE2 metric name patterns;
+# namespaces: namespaces whose ServiceMonitors and PodMonitors it loads.
+aicr_runtime_metrics: {}
 
+# When the new bundle differs from the kept one, compare them with
+# `aicr upgrade-check` first. report: show and keep the report
+# (<aicr_workdir>/upgrade-check.txt). enforce: also stop before anything is
+# applied or written unless every changed component is safe. off: skip it.
+aicr_upgrade_check: report
 # Apply the bundle with helmfile. Off: render only.
 aicr_apply: true
 # How long to wait for the GPU Operator's operands before validating; the
@@ -88,3 +102,8 @@ aicr_validate: true
 aicr_validate_phases: [conformance]
 # Checks this cluster cannot satisfy; they are reported as skipped.
 aicr_validate_skip_checks: []
+# spec.validate.evidence, passed through as is. With
+# cncf.cncfSubmission: true (and the vendor block AICR requires) validate also
+# writes the CNCF AI Conformance submission directory, to
+# <aicr_workdir>/evidence.
+aicr_validate_evidence: {}

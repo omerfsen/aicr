@@ -1,0 +1,76 @@
+---
+# Opt-in mixins (nvsentinel-observe, nvsentinel-object-monitor, ...) are
+# composed by an overlay; AICR has no flag for them. The role writes one more
+# leaf: same criteria as the recipe just rendered, based on the overlay that
+# recipe ended on, adding only the mixins. AICR applies it last, so the
+# recipe is the same plus the mixins.
+
+- name: Read the recipe without the mixins
+  ansible.builtin.slurp:
+    src: "{{ aicr_render_dir }}/recipe.yaml"
+  register: aicr_plain_recipe
+
+- name: External overlay directory
+  ansible.builtin.file:
+    path: "{{ aicr_render_dir }}/data/overlays"
+    state: directory
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
+    mode: "0700"
+  changed_when: false
+  check_mode: false
+
+- name: Write the mixin overlay
+  vars:
+    aicr_plain: "{{ aicr_plain_recipe.content | b64decode | from_yaml }}"
+  ansible.builtin.copy:
+    content: |
+      # Written by omerfsen.aicr from aicr_mixins.
+      {{ {'kind': 'RecipeMetadata',
+          'apiVersion': 'aicr.run/v1beta1',
+          'metadata': {'name': 'omerfsen-aicr-mixins'},
+          'spec': {'base': aicr_plain.metadata.appliedOverlays | last,
+                   'criteria': aicr_plain.criteria | dict2items | rejectattr('value', 'eq', 'any') | items2dict,
+                   'mixins': aicr_mixins}}
+         | to_nice_yaml(indent=2, sort_keys=false) }}
+    dest: "{{ aicr_render_dir }}/data/overlays/omerfsen-aicr-mixins.yaml"
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
+    mode: "0600"
+  changed_when: false
+  check_mode: false
+
+# --data needs a registry.yaml; an empty one adds nothing to AICR's.
+- name: Write an empty external registry
+  ansible.builtin.copy:
+    content: |
+      apiVersion: aicr.run/v1beta1
+      kind: ComponentRegistry
+      components: []
+    dest: "{{ aicr_render_dir }}/data/registry.yaml"
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
+    mode: "0600"
+    force: false
+  changed_when: false
+  check_mode: false
+
+- name: Render the recipe with the mixins
+  ansible.builtin.command:
+    argv: "{{ [aicr_bin_dir ~ '/aicr', 'recipe', '--config', aicr_render_dir ~ '/aicr-config.yaml'] + aicr_data_args }}"
+  changed_when: false
+  check_mode: false
+
+- name: Read the recipe with the mixins
+  ansible.builtin.slurp:
+    src: "{{ aicr_render_dir }}/recipe.yaml"
+  register: aicr_mixed_recipe
+
+- name: AICR applied the mixin overlay last
+  ansible.builtin.assert:
+    that: (aicr_mixed_recipe.content | b64decode | from_yaml).metadata.appliedOverlays | last == 'omerfsen-aicr-mixins'
+    fail_msg: >-
+      AICR did not apply the overlay that composes aicr_mixins
+      ({{ (aicr_mixed_recipe.content | b64decode | from_yaml).metadata.appliedOverlays | join(', ') }}),
+      so the recipe would not have them. An overlay in aicr_data_src may match the same criteria.
+    quiet: true

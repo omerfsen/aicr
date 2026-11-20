@@ -41,7 +41,9 @@
 
 - name: The external data flags
   ansible.builtin.set_fact:
-    aicr_data_args: "{{ ['--data', aicr_render_dir ~ '/data'] if aicr_data_src | length > 0 else [] }}"
+    aicr_data_args: >-
+      {{ ['--data', aicr_render_dir ~ '/data']
+         if aicr_data_src | length > 0 or aicr_mixins | length > 0 else [] }}
 
 # Inside the render directory: what it changes shows up as a bundle difference.
 - name: Copy the external data
@@ -61,6 +63,37 @@
     argv: "{{ [aicr_bin_dir ~ '/aicr', 'recipe', '--config', aicr_render_dir ~ '/aicr-config.yaml'] + aicr_data_args }}"
   changed_when: false
   check_mode: false
+
+- name: Compose the opt-in mixins
+  ansible.builtin.include_tasks: mixins.yml
+  when: aicr_mixins | length > 0
+
+# Fails on an external registry or overlay AICR would not accept, before
+# anything is bundled.
+- name: Check the external data
+  ansible.builtin.command:
+    argv: "{{ [aicr_bin_dir ~ '/aicr', 'recipe', 'validate'] + aicr_data_args }}"
+  changed_when: false
+  check_mode: false
+  when: aicr_data_args | length > 0
+
+- name: Summarize the recipe
+  ansible.builtin.command:
+    argv: [
+      "{{ aicr_bin_dir }}/aicr", query, --summary, --format, table,
+      --recipe, "{{ aicr_render_dir }}/recipe.yaml"]
+  register: aicr_recipe_summary
+  changed_when: false
+  check_mode: false
+
+# Overlays, constraints, component versions and checks, readable at a glance.
+- name: Keep the recipe summary
+  ansible.builtin.copy:
+    content: "{{ aicr_recipe_summary.stdout }}\n"
+    dest: "{{ aicr_workdir }}/recipe-summary.txt"
+    owner: "{{ aicr_owner }}"
+    group: "{{ aicr_group }}"
+    mode: "0600"
 
 # --set-json pairs: ['--set-json', 'component:path=<json>', ...].
 - name: Render the bundle
@@ -83,6 +116,56 @@
   changed_when: ansible_check_mode and aicr_bundle_diff.rc != 0
   check_mode: false
   failed_when: aicr_bundle_diff.rc > 2
+
+# Only when a kept bundle exists and differs (diff exit code 1): AICR's
+# transition records say per component whether the move is safe, needs manual
+# steps, or was never assessed.
+- name: Check the upgrade from the kept bundle
+  ansible.builtin.command:
+    argv:
+      - "{{ aicr_bin_dir }}/aicr"
+      - upgrade-check
+      - --from
+      - "{{ aicr_bundle_dir }}"
+      - --to
+      - "{{ aicr_render_dir }}/bundle"
+      - --deployer
+      - "{{ aicr_deployer }}"
+      - --fail-on-error=false
+  register: aicr_upgrade_check_result
+  changed_when: false
+  check_mode: false
+  when: aicr_upgrade_check != 'off' and aicr_bundle_diff.rc == 1
+
+- name: Upgrade check
+  when: aicr_upgrade_check_result.stdout is defined
+  block:
+    - name: Keep the upgrade check report
+      ansible.builtin.copy:
+        content: "{{ aicr_upgrade_check_result.stdout }}\n"
+        dest: "{{ aicr_workdir }}/upgrade-check.txt"
+        owner: "{{ aicr_owner }}"
+        group: "{{ aicr_group }}"
+        mode: "0600"
+
+    - name: Show the upgrade check
+      ansible.builtin.debug:
+        msg: "{{ aicr_upgrade_check_result.stdout_lines }}"
+
+    # The verdict column of the table: safe, manual, unsafe, unknown, or "-"
+    # for a new or removed component.
+    - name: Every change is safe, or the check only reports
+      ansible.builtin.assert:
+        that: >-
+          aicr_upgrade_check == 'report'
+          or aicr_upgrade_check_result.stdout_lines
+             | select('match', '^\\S+\\s+\\S+\\s+\\S+\\s+(manual|unsafe|unknown)(\\s|$)')
+             | list | length == 0
+        fail_msg: >-
+          AICR's upgrade check found changes that are not safe to apply as they
+          are (the report is above and in {{ aicr_workdir }}/upgrade-check.txt).
+          Follow its steps, then rerun with -e aicr_upgrade_check=report.
+        quiet: true
 
 - name: Keep the new bundle
   ansible.builtin.shell: |

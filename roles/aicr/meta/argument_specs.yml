@@ -45,7 +45,7 @@ argument_specs:
         description: Group of the files and binaries the role writes.
       aicr_version:
         type: str
-        default: "1.2.0"
+        default: "1.3.0"
         description: aicr release. Change O(aicr_sha256) with it.
       aicr_url:
         type: str
@@ -128,6 +128,30 @@ argument_specs:
         description:
           - A directory on the controller with AICR external data (C(registry.yaml) and optional overlays), passed as C(--data).
           - For example to run a chart newer than AICR pins. Empty uses AICR's embedded data only.
+      aicr_mixins:
+        type: list
+        elements: str
+        default: []
+        description:
+          - Opt-in recipe mixins (for example C(nvsentinel-observe), C(nvsentinel-object-monitor)).
+          - AICR has no flag for them; the role writes one more leaf overlay into the external data with the recipe's
+            criteria, based on the overlay the recipe ended on, that adds only these mixins.
+      aicr_runtime_metrics:
+        type: dict
+        default: {}
+        description:
+          - C(spec.bundle.runtimeMetrics) of the AICRConfig, what the runtime Prometheus keeps on top of AICR's own series.
+          - C(series) is a list of RE2 metric name patterns; C(namespaces) lists namespaces whose ServiceMonitors and
+            PodMonitors it loads.
+      aicr_upgrade_check:
+        type: str
+        choices: [report, enforce, "off"]
+        default: report
+        description:
+          - When the new bundle differs from the kept one, compare them with C(aicr upgrade-check) before anything is applied.
+          - C(report) shows the per-component verdicts and steps and keeps them in C(<aicr_workdir>/upgrade-check.txt).
+          - C(enforce) also fails the run unless every changed component is C(safe); follow the steps, then rerun with C(report).
+          - C(off) skips the check.
       aicr_apply:
         type: bool
         default: true
@@ -150,3 +174,10 @@ argument_specs:
         elements: str
         default: []
         description: Checks this cluster cannot satisfy; AICR reports them as skipped.
+      aicr_validate_evidence:
+        type: dict
+        default: {}
+        description:
+          - C(spec.validate.evidence) of the AICRConfig, passed through as is.
+          - With C(cncf.cncfSubmission=true) and the C(cncf.vendor) block AICR requires, validation also writes the CNCF
+            AI Conformance submission directory to C(<aicr_workdir>/evidence); the role sets C(cncf.dir) and empties it first.

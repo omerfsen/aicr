@@ -21,6 +21,7 @@ spec:
     - {name: nvidia-dra-driver-gpu, type: Helm, overrides: {enabled: false}}
     - {name: prometheus-adapter, type: Helm, overrides: {enabled: false}}
     - {name: dra-node-labeler, type: Helm, overrides: {enabled: false}}
+    - {name: nktp, type: Helm, overrides: {enabled: false}}
     - name: nvsentinel
       type: Helm
       overrides:
