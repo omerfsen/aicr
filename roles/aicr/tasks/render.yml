@@ -117,16 +117,37 @@
   check_mode: false
   failed_when: aicr_bundle_diff.rc > 2
 
-# Only when a kept bundle exists and differs (diff exit code 1): AICR's
+# The bundle the cluster runs: with helmfile the last one applied in full
+# (<workdir>/applied, kept after a successful apply, so a failed apply is
+# checked again on the rerun), else the last one rendered.
+- name: Find the last applied bundle
+  ansible.builtin.stat:
+    path: "{{ aicr_applied_dir }}/bundle-info.yaml"
+  register: aicr_applied_stat
+
+- name: Compare the new bundle with the one the cluster runs
+  ansible.builtin.command:
+    argv:
+      - diff
+      - -r
+      - -q
+      - "{{ aicr_render_dir }}/bundle"
+      - "{{ aicr_applied_dir if aicr_applied_stat.stat.exists else aicr_bundle_dir }}"
+  register: aicr_running_diff
+  changed_when: false
+  check_mode: false
+  failed_when: aicr_running_diff.rc > 2
+
+# Only when that bundle exists and differs (diff exit code 1): AICR's
 # transition records say per component whether the move is safe, needs manual
 # steps, or was never assessed.
-- name: Check the upgrade from the kept bundle
+- name: Check the upgrade from the bundle the cluster runs
   ansible.builtin.command:
     argv:
       - "{{ aicr_bin_dir }}/aicr"
       - upgrade-check
       - --from
-      - "{{ aicr_bundle_dir }}"
+      - "{{ aicr_applied_dir if aicr_applied_stat.stat.exists else aicr_bundle_dir }}"
       - --to
       - "{{ aicr_render_dir }}/bundle"
       - --deployer
@@ -135,7 +156,7 @@
   register: aicr_upgrade_check_result
   changed_when: false
   check_mode: false
-  when: aicr_upgrade_check != 'off' and aicr_bundle_diff.rc == 1
+  when: aicr_upgrade_check != 'off' and aicr_running_diff.rc == 1
 
 - name: Upgrade check
   when: aicr_upgrade_check_result.stdout is defined

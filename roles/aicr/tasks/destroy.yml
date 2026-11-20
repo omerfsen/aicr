@@ -49,7 +49,10 @@
       when: aicr_installed_releases | length > 0 and not ansible_check_mode
       changed_when: true
 
-    - name: Forget the kept bundle
+    - name: Forget the kept and the applied bundle
       ansible.builtin.file:
-        path: "{{ aicr_workdir }}/bundle"
+        path: "{{ item }}"
         state: absent
+      loop:
+        - "{{ aicr_workdir }}/bundle"
+        - "{{ aicr_workdir }}/applied"

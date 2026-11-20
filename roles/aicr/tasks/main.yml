@@ -36,6 +36,7 @@
     aicr_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[aicr_uname.stdout] | default('unsupported') }}"
     aicr_render_dir: "{{ aicr_workdir }}/render"
     aicr_bundle_dir: "{{ aicr_workdir }}/bundle"
+    aicr_applied_dir: "{{ aicr_workdir }}/applied"
     aicr_cncf_submission: "{{ aicr_validate_evidence.cncf.cncfSubmission | default(false) | bool }}"
 
 - name: The architecture is supported
