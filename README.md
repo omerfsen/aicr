@@ -317,7 +317,7 @@ kubectl delete validatingwebhookconfiguration kai-podgroup-validation-v2alpha2 k
 kubectl delete mutatingwebhookconfiguration mutating-kai-admission
 kubectl delete ns aicr-validation cert-manager gpu-operator kai-resource-reservation kai-scheduler \
   monitoring nktp node-feature-discovery nodewright nvidia-dra-driver nvsentinel
-kubectl get crd -o name | grep -E 'cert-manager.io|nvidia.com|kai.scheduler|nfd.k8s-sigs.io|opentelemetry.io' | xargs kubectl delete
+kubectl get crd -o name | grep -E 'cert-manager.io|nvidia.com|kai.scheduler|scheduling.run.ai|nfd.k8s-sigs.io|opentelemetry.io|monitoring.coreos.com' | xargs kubectl delete
 ```
 
 ### Any other cluster
