@@ -16,6 +16,14 @@
   changed_when: false
   when: "'gpu-operator' in aicr_bundle_components"
 
+# A failed run writes no report; an old one left in place would read as this
+# run's.
+- name: Remove the last validation report
+  ansible.builtin.file:
+    path: "{{ aicr_workdir }}/validation.yaml"
+    state: absent
+  changed_when: false
+
 # AICR writes a submission only into an absent or empty directory.
 - name: Empty the CNCF evidence directory
   ansible.builtin.file:
