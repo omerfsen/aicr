@@ -3,6 +3,103 @@
 # level (a level's CRDs are in place before the next level needs them). Its
 # exit code 2 means it changed something.
 
+# helmfile never updates a chart's crds/ on upgrade, and AICR requires the new
+# CRDs before every upgrade of a component that owns them (ownsCRDs). AICR's
+# helm bundle carries a script per such component that does it (pull the
+# pinned chart, server-side apply its CRDs as manager helm, skip a release
+# that is not installed yet); the role renders that bundle beside the
+# helmfile one and runs them when the bundle differs from the last one
+# applied in full.
+- name: Apply the CRDs of upgraded components
+  when: aicr_apply_crds | bool and aicr_running_diff.rc != 0 and not ansible_check_mode
+  block:
+    - name: Render the helm bundle for its CRD scripts
+      ansible.builtin.command:
+        argv: >-
+          {{ [aicr_bin_dir ~ '/aicr', 'bundle', '--config', aicr_render_dir ~ '/aicr-config.yaml',
+              '--deployer', 'helm', '--output', aicr_render_dir ~ '/crds']
+             + aicr_data_args
+             + (['--set-json'] | product(aicr_set_json | dict2items
+                  | map(attribute='key')
+                  | zip(aicr_set_json | dict2items | map(attribute='value') | map('to_json'))
+                  | map('join', '=')) | flatten(levels=1)) }}
+      changed_when: false
+
+    - name: Find the CRD scripts
+      ansible.builtin.find:
+        paths: "{{ aicr_render_dir }}/crds"
+        patterns: apply-crds.sh
+        recurse: true
+      register: aicr_crd_scripts
+
+    - name: Apply the CRDs
+      ansible.builtin.command:
+        argv: [bash, "{{ item.path }}"]
+      environment:
+        KUBECONFIG: "{{ aicr_kubeconfig }}"
+        PATH: "{{ aicr_helm | dirname }}:{{ aicr_kubectl | dirname }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      loop: "{{ aicr_crd_scripts.files | sort(attribute='path') }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      register: aicr_crd_apply
+      # The script is silent when it applied CRDs and says so when it skipped.
+      changed_when: >-
+        'helm install creates them' not in aicr_crd_apply.stdout
+        and 'ships no CRDs' not in aicr_crd_apply.stdout
+
+# helm-diff compares manifests, and a failed upgrade already recorded the new
+# manifest, so `helmfile apply` would leave such a release as it is. Sync the
+# bundle's failed releases first. Helm refuses any upgrade of a release left
+# pending (an interrupted install or upgrade), so that needs a person.
+- name: List the bundle's failed and pending releases
+  ansible.builtin.command:
+    argv: ["{{ aicr_helm }}", list, --all-namespaces, --failed, --pending, --output, json]
+  environment:
+    KUBECONFIG: "{{ aicr_kubeconfig }}"
+  register: aicr_broken_releases
+  changed_when: false
+  check_mode: false
+
+- name: Pick the bundle's releases among them
+  ansible.builtin.set_fact:
+    aicr_broken: >-
+      {{ aicr_broken_releases.stdout | from_json
+         | selectattr('name', 'in', (aicr_bundle_info.content | b64decode | from_yaml).layout.releases
+                                    | map(attribute='name') | list)
+         | list }}
+
+- name: No release of the bundle is pending
+  ansible.builtin.assert:
+    that: aicr_broken | rejectattr('status', 'eq', 'failed') | list | length == 0
+    fail_msg: >-
+      Helm reports {{ aicr_broken | rejectattr('status', 'eq', 'failed')
+                      | map(attribute='name') | join(', ') }} as {{ aicr_broken | rejectattr('status', 'eq', 'failed')
+                      | map(attribute='status') | unique | join(', ') }}: an install or upgrade was
+      interrupted, and Helm refuses another until it is resolved. Roll it back to
+      its last deployed revision (helm history, helm rollback), or uninstall a
+      pending install, then rerun.
+    quiet: true
+
+- name: Sync the failed releases
+  ansible.builtin.command:
+    argv:
+      - "{{ aicr_bin_dir }}/helmfile"
+      - --helm-binary
+      - "{{ aicr_helm }}"
+      - --file
+      - "{{ aicr_bundle_dir }}/helmfile.yaml"
+      - --selector
+      - name={{ item }}
+      - sync
+      - --suppress-secrets
+    chdir: "{{ aicr_bundle_dir }}"
+  environment:
+    KUBECONFIG: "{{ aicr_kubeconfig }}"
+    HELM_PLUGINS: "{{ aicr_helm_plugins_dir }}"
+  loop: "{{ aicr_broken | selectattr('status', 'eq', 'failed') | map(attribute='name') | list }}"
+  changed_when: true
+  when: not ansible_check_mode
+
 - name: Apply the bundle
   ansible.builtin.command:
     argv:
@@ -43,3 +140,15 @@
   failed_when: aicr_diff_result.rc not in [0, 2]
   check_mode: false
   when: ansible_check_mode
+
+# Bookkeeping, not a cluster change: the bundle the cluster now runs, for the
+# next run's upgrade check and CRD step.
+- name: Remember the bundle as applied
+  ansible.builtin.shell: |
+    set -o pipefail
+    rm -rf {{ aicr_applied_dir | quote }}
+    cp -a {{ aicr_bundle_dir | quote }} {{ aicr_applied_dir | quote }}
+  args:
+    executable: /bin/bash
+  when: not ansible_check_mode and (aicr_running_dir != aicr_applied_dir or aicr_running_diff.rc != 0)
+  changed_when: false

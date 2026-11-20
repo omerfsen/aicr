@@ -8,11 +8,17 @@
 {% set bundle = {'input': {'recipe': aicr_render_dir ~ '/recipe.yaml'},
                  'output': {'target': aicr_render_dir ~ '/bundle'},
                  'deployment': {'deployer': aicr_deployer, 'set': aicr_set}}
-   | combine({'scheduling': aicr_scheduling} if aicr_scheduling | length > 0 else {}) %}
+   | combine({'scheduling': aicr_scheduling} if aicr_scheduling | length > 0 else {})
+   | combine({'runtimeMetrics': aicr_runtime_metrics} if aicr_runtime_metrics | length > 0 else {}) %}
+{#- A submission run writes into <workdir>/evidence, which the role empties
+    first (AICR wants it absent or empty). -#}
+{% set evidence = aicr_validate_evidence
+   | combine({'cncf': {'dir': aicr_workdir ~ '/evidence'}} if aicr_cncf_submission else {}, recursive=true) %}
 {% set validate = {'input': {'recipe': aicr_bundle_dir ~ '/recipe.yaml'},
                    'execution': {'phases': aicr_validate_phases}
                      | combine({'skipChecks': aicr_validate_skip_checks}
-                               if aicr_validate_skip_checks | length > 0 else {})} %}
+                               if aicr_validate_skip_checks | length > 0 else {})}
+   | combine({'evidence': evidence} if evidence | length > 0 else {}) %}
 {{ {'kind': 'AICRConfig',
     'apiVersion': 'aicr.run/v1beta1',
     'metadata': {'name': 'omerfsen-aicr'},

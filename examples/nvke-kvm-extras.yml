@@ -1,0 +1,17 @@
+---
+# Optional AICR features on the KVM lab cluster, on top of nvke-kvm.yml:
+#
+#   ansible-playbook -i ~/nvke/inventory/kvm omerfsen.aicr.nvke \
+#     -e @examples/nvke-kvm.yml -e @examples/nvke-kvm-extras.yml
+#
+# An opt-in mixin: NVSentinel's Kubernetes Object Monitor, which turns CEL
+# predicates on live objects into health events (node conditions here; cordon
+# and drain only with a quarantine or remediation step).
+aicr_mixins:
+  - nvsentinel-object-monitor
+# Runtime metrics: since AICR v1.3.0 the runtime Prometheus keeps only the
+# series AICR's own components query. This adds cert-manager's: its
+# ServiceMonitor's namespace, and its series.
+aicr_runtime_metrics:
+  namespaces: [cert-manager]
+  series: ['certmanager_.*']

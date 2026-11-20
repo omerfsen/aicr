@@ -317,3 +317,104 @@ against them (https://github.com/omerfsen/nvidia-nvsentinel-mcp/tree/main/docs/t
 
 Not tested: applying this to NVKE, `aicr validate` with the new charts, or the in-place upgrade
 from v1.28.0.
+
+## 2026-11-20: AICR v1.3.0
+
+AICR v1.3.0 (2026-11-17) makes NKTP, the NVKE Telemetry Pipeline, the stock
+telemetry: kube-prometheus-stack 84.5.0 keeps only the operator and one
+Prometheus (24 h, the series AICR's components query). It pins NVSentinel
+v1.31.0 (cert-manager is still v1.20.2, so `files/latest-charts` now carries
+cert-manager v1.21.3 only) and nodewright v0.21.0. The nvke bundle went from 11
+to 12 releases (`nktp`).
+
+New in the role: `aicr_mixins` (opt-in mixins through a generated leaf
+overlay; AICR has no flag), `aicr_runtime_metrics` (`spec.bundle.runtimeMetrics`),
+`aicr_validate_evidence` (`spec.validate.evidence`, CNCF submission), a recipe
+summary (`aicr query --summary`), `aicr recipe validate` on external data, an
+upgrade check (`aicr upgrade-check` from the last applied bundle,
+`aicr_upgrade_check: report|enforce|off`) and a CRD step (`aicr_apply_crds`).
+
+**CRDs under helmfile.** AICR's upgrade notes say the new CRDs of an
+`ownsCRDs` component must be applied before every upgrade under helmfile,
+terraform and fleet: none of them touches a chart's `crds/` after install.
+AICR's `helm` bundle carries an `apply-crds.sh` per such component, so the role
+renders that bundle beside the helmfile one and runs the scripts when the
+bundle differs from the last applied one. A release not installed yet is
+skipped by the script (`helm install creates them`).
+
+**Upgrade on the lab.** NVKE v0.22.0 lab rebuilt (omerfsen.nvke 0.3.0), 0.3.0
+of this collection applied first (11 releases, `aicr validate` 3/3; the first
+NVKE run of NVSentinel v1.30.0). Then this branch:
+
+1. `aicr_upgrade_check=enforce`: stopped before anything was kept or applied
+   (kube-prometheus-stack and nvsentinel `manual`, nodewright `safe`, nktp new).
+   Nothing changed on the cluster.
+2. Default (`report`): the CRD step applied NVSentinel's v1.31.0 CRDs (nktp
+   skipped), `helmfile apply` upgraded nodewright, kube-prometheus-stack and
+   installed nktp, then **failed** on nvsentinel: `DaemonSet/nvsentinel/
+   platform-connectors not ready ... Updated: 1/3`. Cause: memory. NKTP requests
+   about 14 GiB; the two 8 GiB nodes had 4.2 GiB allocatable, 96% requested.
+3. **Fix (lab):** VMs resized one at a time (shutdown, `setmaxmem/setmem
+   --config`, start): nodes 16 GiB, GPU node 32 GiB. Recorded in the nvke
+   inventory's `nvke_kvm_vm_sizes`.
+4. Rerun: `helmfile apply` reported **no change**, and nvsentinel stayed
+   `failed`: helm-diff compares manifests, and the failed revision already holds
+   the new one. **Fix (role):** list the bundle's failed and pending releases
+   (`helm list --failed --pending`) and `helmfile sync` them before the apply.
+   A second gap: the role kept the new bundle before applying it, so after a
+   failed apply the rerun saw no bundle change and skipped the upgrade check
+   and the CRD step. **Fix:** keep the last bundle applied in full
+   (`/var/lib/aicr/applied`) and compare with that.
+5. Validation then timed out: the snapshot agent must run on the GPU node,
+   whose CPU requests were at 86%. **Fix (lab):** 6 vCPU nodes, 12 vCPU GPU node.
+   A failed validation also left the previous run's `validation.yaml` in
+   place, which read as a pass. **Fix (role):** delete it before validating.
+6. Rerun: nvsentinel synced (revision 3 deployed), `aicr validate` 3/3. Then
+   AICR's kube-prometheus-stack clean-up (the PVC was already gone; admission
+   Secret and kubelet Service deleted). DCGM exporter serving GPU metrics.
+7. Rerun: `changed=0` in 27 s, validation included.
+
+Host rebooted mid-test (not by this work); the lab came back by itself. nvke's
+GPU tests 6/6 after it (nvidia-smi, CUDA, TensorFlow, PyTorch, TensorRT, DCGM
+metrics).
+
+**Extras** (`examples/nvke-kvm-extras.yml`): `nvsentinel-object-monitor` mixin
+(overlays `base, monitoring-hpa, nvke, omerfsen-aicr-mixins`;
+`kubernetes-object-monitor` 1/1) and cert-manager as runtime metrics (0 to 203
+`certmanager_*` series in the runtime Prometheus, DCGM series kept). The
+upgrade check reported `NO COMPONENT CHANGES` for the value-only change.
+Validate 3/3, rerun `changed=0`. `nvsentinel-observe` was refused at bundle
+time without a system node selector (its MongoDB datastore), AICR's own check.
+
+**CNCF submission** on the lab: AICR refuses it before any check runs, because
+the generic nvke recipe's three conformance checks cannot establish 7 MUST
+requirements of the v1.36 checklist. The vendor block and evidence settings
+the role passes were accepted.
+
+**Review fixes** (an independent review of the diff, each reproduced, fixed and
+rerun offline or on a throwaway k3d cluster):
+
+- `aicr_mixins` without `aicr_data_src` failed: the first recipe render passed
+  `--data` before the role had created the directory. It now reads only
+  `aicr_data_src`.
+- A `nodes` criterion went into the mixin overlay, which AICR rejects (`nodes`
+  no longer selects overlays). It is left out.
+- `aicr_upgrade_check: off` unquoted in YAML is `false`; the role now reads it as
+  `off`.
+- `argocd-helm` compared with the last bundle rendered on this machine, so with
+  a new work directory `enforce` saw nothing and overwrote the GitOps directory.
+  It now compares with the bundle in the GitOps directory.
+- Helm refuses any upgrade of a `pending-*` release, so syncing one could only
+  fail again. The role syncs `failed` releases and stops with a message for
+  `pending-*` ones (roll back or uninstall first).
+
+k3d (k3s v1.35.5) with the kind NVSentinel example (control-plane label `"true"`,
+storage class `local-path`): first install 6 releases, rerun `changed=0` in 11 s;
+a release marked `failed` was synced (revision 2 deployed), rerun `changed=0`;
+marked `pending-upgrade`, the run stopped with the message.
+
+**Argo CD** (v3.5.6, chart 10.11.6) on the lab, after `aicr_state=absent` (all 12
+releases removed; KAI webhooks, namespaces and CRDs cleaned up as in the README,
+which now also lists KAI's `scheduling.run.ai` CRDs): the gitops-public branch
+with the v1.3.0 bundle, 13 Applications Synced and Healthy in 5.5 minutes,
+`aicr validate` 3/3 (`aicr_apply=false`), a deleted Deployment recreated in 3 s.

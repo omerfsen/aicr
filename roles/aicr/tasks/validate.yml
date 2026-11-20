@@ -16,6 +16,22 @@
   changed_when: false
   when: "'gpu-operator' in aicr_bundle_components"
 
+# A failed run writes no report; an old one left in place would read as this
+# run's.
+- name: Remove the last validation report
+  ansible.builtin.file:
+    path: "{{ aicr_workdir }}/validation.yaml"
+    state: absent
+  changed_when: false
+
+# AICR writes a submission only into an absent or empty directory.
+- name: Empty the CNCF evidence directory
+  ansible.builtin.file:
+    path: "{{ aicr_workdir }}/evidence"
+    state: absent
+  changed_when: false
+  when: aicr_cncf_submission
+
 - name: Run the recipe's checks
   ansible.builtin.command:
     argv: >-
@@ -24,3 +40,10 @@
          + aicr_data_args }}
   register: aicr_validate_result
   changed_when: false
+  # A submission run deploys GPU workloads and an HPA test: about 15 minutes more.
+  timeout: "{{ 3600 if aicr_cncf_submission else omit }}"
+
+- name: Where the CNCF submission is
+  ansible.builtin.debug:
+    msg: "CNCF AI Conformance submission: {{ aicr_workdir }}/evidence on {{ inventory_hostname }}"
+  when: aicr_cncf_submission

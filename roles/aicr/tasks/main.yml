@@ -10,6 +10,9 @@
   ansible.builtin.assert:
     that:
       - aicr_state in ['present', 'absent']
+      - aicr_upgrade_check is sameas false or aicr_upgrade_check in ['report', 'enforce', 'off']
+      - aicr_version is version('1.3.0', '>=')
+      - not (aicr_validate_evidence.cncf.cncfSubmission | default(false) | bool) or aicr_validate_skip_checks | length == 0
       - aicr_deployer in ['helmfile', 'argocd-helm']
       - aicr_deployer == 'argocd-helm' or aicr_kubeconfig | length > 0
       - aicr_criteria.service is defined and aicr_criteria.service | length > 0
@@ -17,7 +20,10 @@
       aicr_state is present or absent; aicr_deployer is helmfile or
       argocd-helm. The helmfile deployer needs aicr_kubeconfig (the cluster's
       admin kubeconfig on this host), and aicr_criteria.service names the
-      recipe's service (nvke, eks, rke2, ...).
+      recipe's service (nvke, eks, rke2, ...). aicr_upgrade_check is report,
+      enforce or off. aicr_version is 1.3.0 or
+      later (the role runs aicr query --summary and recipe validate). A CNCF
+      submission run takes no aicr_validate_skip_checks.
     quiet: true
 
 - name: Read the host architecture
@@ -31,6 +37,10 @@
     aicr_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[aicr_uname.stdout] | default('unsupported') }}"
     aicr_render_dir: "{{ aicr_workdir }}/render"
     aicr_bundle_dir: "{{ aicr_workdir }}/bundle"
+    aicr_applied_dir: "{{ aicr_workdir }}/applied"
+    # An unquoted `off` in YAML is the boolean false.
+    aicr_upgrade_check_mode: "{{ 'off' if aicr_upgrade_check is sameas false else aicr_upgrade_check }}"
+    aicr_cncf_submission: "{{ aicr_validate_evidence.cncf.cncfSubmission | default(false) | bool }}"
 
 - name: The architecture is supported
   ansible.builtin.assert:

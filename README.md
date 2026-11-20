@@ -17,7 +17,7 @@ for it, but the role works on any cluster AICR has a recipe for.
 
 | Name | Type | Does |
 |---|---|---|
-| `omerfsen.aicr.aicr` | role | Pinned `aicr` (and helmfile, helm-diff); recipe and bundle from an AICRConfig; `helmfile apply` and `aicr validate`, or an Argo CD bundle written into a GitOps checkout; `aicr_state: absent` removes the stack |
+| `omerfsen.aicr.aicr` | role | Pinned `aicr` (and helmfile, helm-diff); recipe and bundle from an AICRConfig, with opt-in mixins and runtime metrics; an upgrade check against the last bundle; `helmfile apply` and `aicr validate` (optionally with the CNCF AI Conformance submission), or an Argo CD bundle written into a GitOps checkout; `aicr_state: absent` removes the stack |
 | `omerfsen.aicr.deploy` | playbook | The role on the `aicr_hosts` group (or `aicr_target`), for any cluster |
 | `omerfsen.aicr.nvke` | playbook | AICR's `nvke` recipe on an omerfsen.nvke cluster, from its bootstrap host, with the overrides NVKE needs |
 | `omerfsen.aicr.gitops` | playbook | The same recipe and overrides as an Argo CD Helm-chart bundle, rendered on this machine into a GitOps repository |
@@ -33,7 +33,7 @@ Terraform or Fleet, and has an in-cluster operator in preview.
 | Argo CD from Git (`argocd-helm` bundle) | `gitops` playbook | The cluster's state lives in a Git repository and Argo CD keeps it there. AICR's own guidance: a cluster that manages its GPU stack through Git keeps using the CLI to render (ADR-027) |
 | The AICR Operator (`oci://ghcr.io/nvidia/charts/aicr-operator`) | not supported | See below |
 
-**The AICR Operator** (Helm chart, AICR v1.2.0) runs AICR in the cluster
+**The AICR Operator** (Helm chart, AICR v1.3.0) runs AICR in the cluster
 and rolls the stack out through Argo CD, with approvals and plan pinning,
 from a `ClusterRuntime` resource. It is a preview (`v1alpha1`, no hardware
 profile qualified yet), and it cannot run on the KVM lab:
@@ -58,37 +58,47 @@ profile qualified yet), and it cannot run on the KVM lab:
 
 | | Supported |
 |---|---|
-| AICR | v1.2.0, pinned (`aicr_version`, `aicr_sha256`) |
+| AICR | v1.3.0, pinned (`aicr_version`, `aicr_sha256`); the role needs 1.3.0 or later |
 | helmfile / helm-diff | v1.8.2 / v3.15.15, pinned and checksum-verified |
 | Helm | 3 or 4 on the target host, not installed by the role (tested with v4.2.4) |
 | Argo CD | For the `argocd-helm` bundle: 2.13 or later (AICR), tested with v3.5.6 |
 | Target host | Linux, amd64 or arm64, with helm, kubectl and the cluster's admin kubeconfig |
 | Clusters | Any AICR service with a recipe (`aicr recipe --help`); the `nvke` playbook for omerfsen.nvke clusters |
 | ansible-core | 2.16 or later |
-| Tested | An NVKE v0.22.0 cluster from omerfsen.nvke on KVM (3 nodes, an RTX 4080 SUPER passed through to one). helmfile from the bootstrap host with Helm 4.2.4: 11 releases in 7m30s, `aicr validate` 3/3, rerun `changed=0` in 27s, `aicr_state=absent` removes them (rerun `changed=0`). Argo CD v3.5.6 (chart 10.11.6) from [omerfsen/gitops-public](https://github.com/omerfsen/gitops-public): the `gitops` playbook's bundle (rerun `changed=0`), 12 Applications Synced and Healthy, `aicr validate` 3/3, a deleted Deployment recreated in 37s. omerfsen.nvke's GPU tests (nvidia-smi, CUDA, TensorFlow, PyTorch, TensorRT, DCGM metrics) 6/6 on both |
+| Tested | AICR v1.3.0 on an NVKE v0.22.0 cluster from omerfsen.nvke on KVM (3 nodes, an RTX 4080 SUPER passed through to one, VMs sized as in [Upgrading](#upgrading-from-omerfsenaicr-030-aicr-v120)): upgraded in place from this collection's 0.3.0 (AICR v1.2.0), `aicr validate` 3/3, rerun `changed=0` in 27s, omerfsen.nvke's GPU tests (nvidia-smi, CUDA, TensorFlow, PyTorch, TensorRT, DCGM metrics) 6/6; the extras example (a mixin and runtime metrics) applied, validated and rerun `changed=0`. AICR v1.2.0 (0.2.0): helmfile 11 releases in 7m30s, `aicr_state=absent`, and Argo CD v3.5.6 from [omerfsen/gitops-public](https://github.com/omerfsen/gitops-public) with self-heal; see [docs/build-log.md](docs/build-log.md) |
 
 ## Component versions
 
-What the `nvke` playbook installs: AICR v1.2.0's `nvke` recipe, with two charts
-newer than AICR pins (NVSentinel v1.28.0 and cert-manager v1.20.2 upstream), set
-through AICR's `--data` override in `playbooks/files/latest-charts`. Set
+What the `nvke` playbook installs: AICR v1.3.0's `nvke` recipe, with cert-manager
+v1.21.3 instead of AICR's v1.20.2 (below the v1.21 minimum of the NVSentinel AICR
+pins), set through AICR's `--data` override in `playbooks/files/latest-charts`. Set
 `aicr_nvke_data_src: ""` to use AICR's own pins.
 
 | Release | Namespace | Version |
 |---|---|---|
-| nodewright-operator | nodewright | v0.20.0 |
+| nodewright-operator | nodewright | v0.21.0 |
 | prometheus-operator-crds | monitoring | 28.0.1 |
 | cert-manager | cert-manager | v1.21.3 |
-| kube-prometheus-stack | monitoring | 84.4.0 |
+| kube-prometheus-stack | monitoring | 84.5.0 (the operator and one Prometheus only) |
 | k8s-ephemeral-storage-metrics | monitoring | 1.19.2 |
 | nfd | node-feature-discovery | 0.20.1 |
 | gpu-operator | gpu-operator | v26.7.2 |
 | kai-scheduler | kai-scheduler | v0.16.9 |
+| nktp | nktp | 0.2.0 |
 | nvidia-dra-driver-gpu | nvidia-dra-driver | 0.5.1 |
-| nvsentinel | nvsentinel | v1.30.0 |
+| nvsentinel | nvsentinel | v1.31.0 |
 | prometheus-adapter | monitoring | 5.3.0 |
 
-`dra-node-labeler`, the twelfth component, has no release of its own.
+`dra-node-labeler`, the thirteenth component, has no release of its own.
+
+AICR v1.3.0 made NKTP, the NVKE Telemetry Pipeline, the stock telemetry
+(ADR-026): OpenTelemetry collectors for metrics, logs, events and traces, with
+kube-state-metrics, node-exporter and a metrics-server (NVKE ships none).
+kube-prometheus-stack is cut down to the operator and one Prometheus that keeps
+only the series prometheus-adapter needs, for 24 hours. NKTP's bundled backend,
+`otel-lgtm`, is for evaluation only (one pod, `emptyDir`, anonymous Grafana
+admin); for anything else turn it off and set the five backend endpoints, as in
+AICR's [component catalog](https://github.com/NVIDIA/aicr/blob/v1.3.0/docs/user/component-catalog.md#nktp-telemetry-pipeline).
 
 To change these versions after an AICR bump, or pin others, run
 `tools/gen-latest-charts.sh <aicr checkout>`: AICR replaces a registry entry
@@ -145,12 +155,89 @@ image needs on top of AICR's `nvke` recipe:
   (`ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false`), as in AICR's
   GB200 NVKE recipe.
 
-- **Newer charts.** NVSentinel v1.30.0 and cert-manager v1.21.3 (see
-  [Component versions](#component-versions)). Rendered for NVKE, not applied there
-  yet; the same charts ran on kind.
+- **A newer cert-manager.** v1.21.3 (see [Component versions](#component-versions)).
 
 More overrides go in `aicr_nvke_set` and `aicr_nvke_set_json`
 (the base ones are in `playbooks/vars/nvke.yml`).
+
+### Upgrading from omerfsen.aicr 0.3.0 (AICR v1.2.0)
+
+Rerun the `nvke` playbook. Before anything is applied the role compares the
+bundle the cluster runs with the new one (`aicr upgrade-check`) and shows the
+report; on the lab it reads:
+
+```text
+COMPONENT              FROM     TO       VERDICT  NOTES
+kube-prometheus-stack  84.4.0   84.5.0   manual   1 minor, 3 steps, ...
+nktp                   -        0.2.0    -        new component, nothing to do
+nodewright-operator    v0.20.0  v0.21.0  safe     1 minor, verified
+nvsentinel             v1.30.0  v1.31.0  manual   1 minor, 5 steps
+```
+
+Run it with `-e aicr_upgrade_check=enforce` first to stop there and read the
+steps (`/var/lib/aicr/upgrade-check.txt` on the bootstrap host). On the
+`nvke` recipe:
+
+- **NVSentinel:** the analyzer, remediation and reboot-image steps do not
+  apply (none of them is composed). Its new CRDs are applied by the role
+  before `helmfile apply` (`aicr_apply_crds`).
+- **kube-prometheus-stack:** Grafana, Alertmanager, node-exporter,
+  kube-state-metrics and the Prometheus history go; NKTP replaces them.
+  After the upgrade, delete what Helm does not own:
+
+  ```shell
+  kubectl delete pvc --ignore-not-found -n monitoring prometheus-kube-prometheus-prometheus-db-prometheus-kube-prometheus-prometheus-0
+  kubectl delete secret --ignore-not-found -n monitoring kube-prometheus-admission
+  kubectl delete service --ignore-not-found -n kube-system kube-prometheus-kubelet
+  ```
+
+**The KVM lab needs bigger VMs.** NKTP requests about 14 GiB of memory across
+the cluster, and AICR's validation agent a free CPU on the GPU node. On
+omerfsen.nvke's default sizes (4 vCPU / 8 GiB nodes, 8 vCPU / 24 GiB GPU node)
+NVSentinel's upgrade and then the validation Job stayed Pending. In the nvke
+inventory:
+
+```yaml
+nvke_kvm_vm_sizes:
+  nvke-cp-01: {vcpus: 6, memory_mb: 16384}
+  nvke-cp-02: {vcpus: 6, memory_mb: 16384}
+  nvke-cp-03: {vcpus: 12, memory_mb: 32768}
+```
+
+The sizes apply when a VM is created; resize a running lab one VM at a time
+with `virsh shutdown`, `virsh setmaxmem/setmem/setvcpus --config`, `virsh start`.
+
+If an upgrade fails half way (a release left `failed`), the rerun syncs that
+release again: helm-diff sees no difference in a failed release, so
+`helmfile apply` alone would leave it.
+
+### Mixins, runtime metrics and CNCF evidence
+
+`examples/nvke-kvm-extras.yml` turns on two AICR v1.3.0 features on the lab:
+
+```shell
+ansible-playbook -i ~/nvke/inventory/kvm playbooks/nvke.yml \
+  -e @examples/nvke-kvm.yml -e @examples/nvke-kvm-extras.yml
+```
+
+- `aicr_mixins: [nvsentinel-observe, ...]` composes AICR's opt-in mixins
+  (NVSentinel's object monitor, observe and remediation steps, external
+  remediation, maintenance requests, CSP health monitors, ...). AICR has no
+  flag for them; the role writes one more leaf overlay, with the recipe's
+  criteria and the mixins, and checks that AICR applied it last. Some mixins
+  need more: `nvsentinel-observe` brings a MongoDB datastore, which needs a
+  system node selector (`aicr_scheduling`) and storage.
+- `aicr_runtime_metrics: {namespaces: [...], series: [...]}`: since v1.3.0 the
+  runtime Prometheus keeps only the series AICR's components query. This adds
+  a workload's ServiceMonitors and series.
+- `aicr_validate_evidence` is passed to AICR as `spec.validate.evidence`. With
+  `cncf: {cncfSubmission: true, vendor: {...}}` validation also writes the CNCF
+  AI Conformance submission directory to `/var/lib/aicr/evidence`. AICR first
+  checks that the recipe's conformance checks can establish every applicable
+  MUST requirement. AICR's generic `nvke` recipe declares three checks, so on
+  the lab it is refused before any check runs (`the recipe's conformance checks
+  cannot establish 7 applicable MUST requirement(s) of the v1.36 checklist`);
+  NVIDIA publishes evidence for its NVKE GB200, GB300 and VR200 recipes.
 
 ### NVSentinel alone on kind
 
@@ -158,7 +245,8 @@ More overrides go in `aicr_nvke_set` and `aicr_nvke_set_json`
 and Percona, with the quarantine step on and no GPU stack. It is the install behind
 [nvidia-nvsentinel-mcp](https://github.com/omerfsen/nvidia-nvsentinel-mcp)'s fake
 DCGM tests. Applied to a kind cluster (Kubernetes v1.36.4): NVSentinel v1.30.0 detected, cordoned
-and drained on a simulated DCGM fault.
+and drained on a simulated DCGM fault. With AICR v1.3.0 it renders NVSentinel v1.31.0 (NKTP is off
+in the example).
 
 ```shell
 ansible-playbook playbooks/deploy.yml -i localhost, -c local -e aicr_target=localhost \
@@ -207,7 +295,9 @@ open files`. On every node:
 ```shell
 printf 'fs.inotify.max_user_instances = 8192\nfs.inotify.max_user_watches = 524288\n' \
   | sudo tee /etc/sysctl.d/90-inotify.conf && sudo sysctl -p /etc/sysctl.d/90-inotify.conf
-``` Validate
+```
+
+omerfsen.nvke 0.2.0 and later set these on every node (`nvke_node_sysctls`). Validate
 the cluster after Argo CD has synced with the `nvke` playbook and
 `-e aicr_apply=false`: it renders and validates, and applies nothing.
 
@@ -226,8 +316,8 @@ webhooks first (a webhook whose service is gone blocks pod creation):
 kubectl delete validatingwebhookconfiguration kai-podgroup-validation-v2alpha2 kai-queue-validation-v2 validating-kai-admission
 kubectl delete mutatingwebhookconfiguration mutating-kai-admission
 kubectl delete ns aicr-validation cert-manager gpu-operator kai-resource-reservation kai-scheduler \
-  monitoring node-feature-discovery nodewright nvidia-dra-driver nvsentinel
-kubectl get crd -o name | grep -E 'cert-manager.io|nvidia.com|kai.scheduler|nfd.k8s-sigs.io' | xargs kubectl delete
+  monitoring nktp node-feature-discovery nodewright nvidia-dra-driver nvsentinel
+kubectl get crd -o name | grep -E 'cert-manager.io|nvidia.com|kai.scheduler|scheduling.run.ai|nfd.k8s-sigs.io|opentelemetry.io|monitoring.coreos.com' | xargs kubectl delete
 ```
 
 ### Any other cluster
@@ -271,10 +361,19 @@ applying, for a stack another tool (Argo CD) deployed.
    `aicr_set_json` as `--set-json` flags (the AICRConfig has no field for list
    or object overrides). AICR renders the same inputs to the same bytes, so
    the new bundle replaces the kept one in `/var/lib/aicr/bundle` only when
-   they differ.
-3. **Apply.** `helmfile apply --detailed-exitcode`: exit code 2 means it
+   they differ. `aicr_mixins` adds one more leaf overlay to the external data
+   (same criteria, based on the overlay the recipe ended on), `aicr recipe
+   validate` checks any external data first, and `aicr query --summary` writes
+   `/var/lib/aicr/recipe-summary.txt` (overlays, components, versions, checks).
+3. **Upgrade check.** When the new bundle differs from the kept one,
+   `aicr upgrade-check` compares them component by component from AICR's
+   transition records: `safe`, `manual` (with the steps for this deployer),
+   `unsafe` or `unknown`. The report is shown and kept in
+   `/var/lib/aicr/upgrade-check.txt`; `aicr_upgrade_check: enforce` stops the
+   run there unless every change is `safe`.
+4. **Apply.** `helmfile apply --detailed-exitcode`: exit code 2 means it
    synced a release, and the task reports a change.
-4. **Validate.** The role waits for the GPU Operator's ClusterPolicy, then runs
+5. **Validate.** The role waits for the GPU Operator's ClusterPolicy, then runs
    `aicr validate`: a snapshot Job captures the cluster, and the recipe's
    checks (for `nvke`: platform health, GPU Operator health, DRA support) run
    as Jobs in `aicr-validation` and are deleted. The report is
