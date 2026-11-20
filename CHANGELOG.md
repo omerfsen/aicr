@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/omerfsen/aicr/compare/v0.3.0...v0.4.0) (2026-11-20)
+
+
+### Features
+
+* **aicr:** run AICR v1.3.0 with mixins, runtime metrics and an upgrade check ([#10](https://github.com/omerfsen/aicr/issues/10)) ([1b28a15](https://github.com/omerfsen/aicr/commit/1b28a15f1a7b1bc2ab90e7fd4ac9bb10e1e61bdc))
+
 ## [0.3.0](https://github.com/omerfsen/aicr/compare/v0.2.0...v0.3.0) (2026-11-04)
 
 
